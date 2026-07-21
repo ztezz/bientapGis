@@ -50,6 +50,15 @@ export function useLayerManager() {
   const duplicateParcel = useCallback((layerId, parcelId) =>
     layerStore.duplicateParcel(layerId, parcelId), [])
 
+  const updateParcelsAttributes = useCallback((selections, attrs) =>
+    layerStore.updateParcelsAttributes(selections, attrs), [])
+
+  const removeParcels = useCallback((selections) =>
+    layerStore.removeParcels(selections), [])
+
+  const undo = useCallback(() => layerStore.undo(), [])
+  const redo = useCallback(() => layerStore.redo(), [])
+
   // ── Selection ──────────────────────────────────────────────
   const selectParcel = useCallback((layerId, parcelId) =>
     layerStore.selectParcel(layerId, parcelId), [])
@@ -73,13 +82,19 @@ export function useLayerManager() {
   return {
     layers:   state.layers,
     selected: state.selected,
+    canUndo: state.canUndo,
+    canRedo: state.canRedo,
+    lastSavedAt: state.lastSavedAt,
 
     // Layer
     addLayer, removeLayer, updateLayer, reorderLayers, getActiveLayerId,
 
     // Parcel
     addParcel, updateParcelCoords, updateParcelAttributes,
-    removeParcel, duplicateParcel,
+    removeParcel, duplicateParcel, updateParcelsAttributes, removeParcels,
+
+    // History
+    undo, redo,
 
     // Selection
     selectParcel, clearSelection, getSelectedParcel,

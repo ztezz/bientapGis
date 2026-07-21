@@ -1,0 +1,84 @@
+.data-input-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 7, 16, 0.72);
+  backdrop-filter: blur(5px);
+}
+
+.data-input-modal {
+  width: min(760px, 94vw);
+  height: min(760px, 90vh);
+  min-height: 520px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #2e3a61;
+  border-radius: 12px;
+  background: #161929;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.58);
+  animation: dataInputModalIn 0.16s ease-out;
+}
+
+@keyframes dataInputModalIn {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.data-input-modal-bar {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 14px 0 16px;
+  border-bottom: 1px solid #26304f;
+  background: #1b2036;
+  flex-shrink: 0;
+}
+
+.data-input-modal-bar > div {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.data-input-modal-bar strong { color: #e2e8f0; font-size: 13px; }
+.data-input-modal-bar span { color: #52617c; font-size: 11px; }
+
+.data-input-modal-bar button {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.data-input-modal-bar button:hover {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+.data-input-modal-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.data-input-modal-content .dip-header { display: none; }
+.data-input-modal-content .dip-table { min-width: 620px; }
+.data-input-modal-content .dip-table th { font-size: 10.5px; }
+.data-input-modal-content .dip-table input { font-size: 12px; padding: 7px; }
+
+@media (max-width: 700px) {
+  .data-input-overlay { padding: 8px; }
+  .data-input-modal { width: 100%; height: 96vh; min-height: 0; }
+  .data-input-modal-bar span { display: none; }
+}

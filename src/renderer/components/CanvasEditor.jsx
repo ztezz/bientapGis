@@ -287,30 +287,6 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       setStatus('Kéo đỉnh để điều chỉnh vị trí')
     } else if (tool === 'pan') {
       setStatus('Kéo để di chuyển bản đồ | Scroll để zoom')
-      const startPan = opt => {
-        if (opt.e.button !== 0) return
-        isPanning.current = true
-        lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
-        canvas.setCursor('grabbing')
-        opt.e.preventDefault()
-      }
-      const movePan = opt => {
-        if (!isPanning.current) return
-        canvas.relativePan(new fabric.Point(
-          opt.e.clientX - lastPan.current.x,
-          opt.e.clientY - lastPan.current.y
-        ))
-        lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
-        opt.e.preventDefault()
-      }
-      const endPan = () => {
-        isPanning.current = false
-        canvas.setCursor('grab')
-      }
-      canvas.on('mouse:down:before', startPan)
-      canvas.on('mouse:move', movePan)
-      canvas.on('mouse:up', endPan)
-      toolEvents.current = { down: startPan, dbl: null, move: movePan, up: endPan }
     }
 
     // Bật/tắt draggable cho vertex
@@ -321,6 +297,62 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       obj.set({ selectable: canEdit, evented: canEdit })
     })
     canvas.renderAll()
+  }, [tool])
+
+  // Pan chuột trái bằng DOM Pointer Events để không bị Fabric object chặn sự kiện.
+  useEffect(() => {
+    const canvas = fc.current
+    const surface = canvas?.upperCanvasEl
+    if (!canvas || !surface || tool !== 'pan') return
+
+    const pointerDown = event => {
+      if (event.button !== 0) return
+      isPanning.current = true
+      lastPan.current = { x: event.clientX, y: event.clientY }
+      surface.setPointerCapture?.(event.pointerId)
+      canvas.setCursor('grabbing')
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+
+    const pointerMove = event => {
+      if (!isPanning.current) return
+      const dx = event.clientX - lastPan.current.x
+      const dy = event.clientY - lastPan.current.y
+      if (dx || dy) {
+        const vpt = canvas.viewportTransform.slice()
+        vpt[4] += dx
+        vpt[5] += dy
+        canvas.setViewportTransform(vpt)
+        canvas.requestRenderAll()
+      }
+      lastPan.current = { x: event.clientX, y: event.clientY }
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+
+    const pointerUp = event => {
+      if (!isPanning.current) return
+      isPanning.current = false
+      surface.releasePointerCapture?.(event.pointerId)
+      canvas.setCursor('grab')
+      event.preventDefault()
+      event.stopImmediatePropagation()
+    }
+
+    surface.style.touchAction = 'none'
+    surface.addEventListener('pointerdown', pointerDown, { capture: true })
+    surface.addEventListener('pointermove', pointerMove, { capture: true })
+    surface.addEventListener('pointerup', pointerUp, { capture: true })
+    surface.addEventListener('pointercancel', pointerUp, { capture: true })
+
+    return () => {
+      isPanning.current = false
+      surface.removeEventListener('pointerdown', pointerDown, { capture: true })
+      surface.removeEventListener('pointermove', pointerMove, { capture: true })
+      surface.removeEventListener('pointerup', pointerUp, { capture: true })
+      surface.removeEventListener('pointercancel', pointerUp, { capture: true })
+    }
   }, [tool])
 
   // Keyboard: Esc hủy draw/measure/boxselect
@@ -981,18 +1013,27 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   // ============================================================
 
   function drawGrid(canvas) {
-    const step = 60, W = 6000, H = 6000
-    for (let x = 0; x < W; x += step) {
-      const l = new fabric.Line([x, 0, x, H], {
-        stroke: 'rgba(255,255,255,0.035)', strokeWidth: 1,
+    const step = 60
+    const extent = 12000
+
+    for (let x = -extent; x <= extent; x += step) {
+      const major = x % (step * 5) === 0
+      const axis = x === 0
+      const l = new fabric.Line([x, -extent, x, extent], {
+        stroke: axis ? 'rgba(76,110,245,0.32)' : major ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+        strokeWidth: axis ? 1.5 : 1,
         selectable: false, evented: false,
       })
       l.__isGrid = true
       canvas.add(l)
     }
-    for (let y = 0; y < H; y += step) {
-      const l = new fabric.Line([0, y, W, y], {
-        stroke: 'rgba(255,255,255,0.035)', strokeWidth: 1,
+
+    for (let y = -extent; y <= extent; y += step) {
+      const major = y % (step * 5) === 0
+      const axis = y === 0
+      const l = new fabric.Line([-extent, y, extent, y], {
+        stroke: axis ? 'rgba(76,110,245,0.32)' : major ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
+        strokeWidth: axis ? 1.5 : 1,
         selectable: false, evented: false,
       })
       l.__isGrid = true

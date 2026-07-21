@@ -2,7 +2,7 @@
  * MultiSelectPanel.jsx
  * Hiển thị danh sách các vùng được quét chọn + batch actions
  */
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { LAND_TYPES } from '@modules/layerStore'
 import './MultiSelectPanel.css'
 
@@ -14,7 +14,9 @@ export default function MultiSelectPanel({
   onSelectSingle,      // (layerId, parcelId) => void
   onDeleteAll,         // () => void
   onExportSelected,    // () => void
+  onBatchUpdate,       // (attrs) => void
 }) {
+  const [batch, setBatch] = useState({ loaidat: '', sotobando: '', mucDich: '', thoiHan: '' })
   // Resolve đối tượng parcel + layer đầy đủ từ selections
   const resolved = useMemo(() => {
     return selections.map(({ layerId, parcelId }) => {
@@ -79,6 +81,41 @@ export default function MultiSelectPanel({
 
       {/* ── Summary by layer ── */}
       <LayerSummary resolved={resolved} />
+
+      <div className="msp-batch">
+        <p className="msp-summary-title">Gán thuộc tính hàng loạt</p>
+        <select
+          value={batch.loaidat}
+          onChange={event => setBatch(current => ({ ...current, loaidat: event.target.value }))}
+        >
+          <option value="">Không đổi loại đất</option>
+          {LAND_TYPES.map(type => <option key={type.code} value={type.code}>{type.label}</option>)}
+        </select>
+        <input
+          value={batch.sotobando}
+          onChange={event => setBatch(current => ({ ...current, sotobando: event.target.value }))}
+          placeholder="Số tờ bản đồ (không đổi nếu trống)"
+        />
+        <input
+          value={batch.mucDich}
+          onChange={event => setBatch(current => ({ ...current, mucDich: event.target.value }))}
+          placeholder="Mục đích sử dụng"
+        />
+        <input
+          value={batch.thoiHan}
+          onChange={event => setBatch(current => ({ ...current, thoiHan: event.target.value }))}
+          placeholder="Thời hạn sử dụng"
+        />
+        <button
+          className="msp-batch-apply"
+          onClick={() => {
+            const patch = Object.fromEntries(Object.entries(batch).filter(([, value]) => String(value).trim() !== ''))
+            if (Object.keys(patch).length) onBatchUpdate?.(patch)
+          }}
+        >
+          Áp dụng cho {resolved.length} vùng
+        </button>
+      </div>
 
       {/* ── Danh sách vùng ── */}
       <div className="msp-list">

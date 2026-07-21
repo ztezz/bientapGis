@@ -39,15 +39,24 @@ html, body, #root {
 /* ══ TOP BAR ══ */
 .top-bar {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 0 12px;
-  height: 48px;
+  flex-direction: column;
+  align-items: stretch;
+  height: 88px;
   background: var(--bg-mid);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
   user-select: none;
   z-index: 100;
+}
+
+.top-bar-main {
+  height: 42px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
 }
 
 .top-bar-left {
@@ -82,23 +91,53 @@ html, body, #root {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 2px;
-  flex: 1;
-  justify-content: center;
+  gap: 4px;
+  height: 46px;
+  padding: 4px 10px 5px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-top: 1px solid rgba(255,255,255,0.035);
+  background: #151a2d;
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
 }
 
-.toolbar-sep {
-  width: 1px;
-  height: 24px;
-  background: var(--border);
-  margin: 0 4px;
+.toolbar-group {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px 0 6px;
+  border-right: 1px solid #27304d;
+  flex-shrink: 0;
+}
+
+.toolbar-group--last { border-right: 0; }
+
+.toolbar-group-label {
+  color: #415274;
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  line-height: 1;
+}
+
+.toolbar-group-buttons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
 }
 
 .toolbar-btn {
   display: flex;
   align-items: center;
   gap: 5px;
-  padding: 5px 10px;
+  min-width: 34px;
+  min-height: 32px;
+  padding: 5px 8px;
   background: transparent;
   border: 1px solid transparent;
   border-radius: 7px;
@@ -112,6 +151,15 @@ html, body, #root {
   color: var(--text-main);
   border-color: var(--border);
 }
+.toolbar-btn:disabled {
+  opacity: 0.32;
+  cursor: not-allowed;
+}
+.toolbar-btn:disabled:hover {
+  background: transparent;
+  color: var(--text-muted);
+  border-color: transparent;
+}
 .toolbar-btn--active {
   background: rgba(76,110,245,0.18) !important;
   border-color: rgba(76,110,245,0.5) !important;
@@ -120,6 +168,14 @@ html, body, #root {
 
 .toolbar-btn-icon { font-size: 15px; line-height: 1; }
 .toolbar-btn-label { font-size: 12px; font-weight: 500; }
+.toolbar-btn kbd {
+  padding: 1px 4px;
+  border: 1px solid #334155;
+  border-radius: 3px;
+  background: #111421;
+  color: #52617c;
+  font: 9px 'JetBrains Mono', monospace;
+}
 
 /* ── Right side top bar ── */
 .top-bar-right {
@@ -169,6 +225,17 @@ html, body, #root {
   color: #fff;
   font-weight: 600;
 }
+.top-btn--data {
+  border-color: rgba(52, 211, 153, 0.38);
+  background: rgba(16, 185, 129, 0.1);
+  color: #6ee7b7;
+  font-weight: 650;
+}
+.top-btn--data:hover {
+  border-color: #34d399;
+  background: rgba(16, 185, 129, 0.18);
+  color: #a7f3d0;
+}
 .top-btn--primary:hover {
   background: #5c7cfa;
   border-color: #5c7cfa;
@@ -198,19 +265,6 @@ html, body, #root {
   min-width: 0;
 }
 
-/* ── Left input / OCR panel ── */
-.left-panel {
-  width: 310px;
-  min-width: 270px;
-  max-width: 360px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border-right: 1px solid var(--border);
-  background: var(--bg-dark);
-  flex-shrink: 0;
-}
-
 /* ── Right panel ── */
 .right-panel {
   width: 300px;
@@ -225,9 +279,17 @@ html, body, #root {
 }
 
 @media (max-width: 1250px) {
-  .left-panel { width: 270px; min-width: 250px; }
   .right-panel { width: 270px; min-width: 250px; }
   .toolbar-btn-label { display: none; }
+  .toolbar-btn kbd { display: none; }
+  .toolbar-btn { width: 34px; justify-content: center; padding: 5px; }
+}
+
+@media (max-width: 850px) {
+  .province-label { display: none; }
+  .province-select { max-width: 130px; }
+  .top-btn { padding: 5px 8px; }
+  .app-version { display: none; }
 }
 
 /* Right tabs */
@@ -319,6 +381,12 @@ html, body, #root {
   font-weight: 700;
   color: var(--accent-lt);
   font-size: 11.5px;
+}
+
+.autosave-status {
+  color: #34d399;
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 /* ══ SCROLLBAR GLOBAL ══ */

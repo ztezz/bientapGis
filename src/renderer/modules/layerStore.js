@@ -121,6 +121,8 @@ function hexToFill(hexColor) {
 // ============================================================
 
 const STORAGE_KEY = 'vn_land_editor_layers'
+const STORAGE_BACKUP_KEY = 'vn_land_editor_layers_backup'
+const HISTORY_LIMIT = 50
 
 // ============================================================
 // LAYER STORE CLASS (Singleton pattern)
@@ -131,6 +133,9 @@ class LayerStore {
     this._layers  = []      // Array<Layer>
     this._selected = null   // { layerId, parcelId } | null
     this._listeners = new Set()
+    this._undoStack = []
+    this._redoStack = []
+    this._lastSavedAt = null
     this._load()
   }
 
@@ -138,7 +143,10 @@ class LayerStore {
 
   _save() {
     try {
+      const previous = localStorage.getItem(STORAGE_KEY)
+      if (previous) localStorage.setItem(STORAGE_BACKUP_KEY, previous)
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this._layers))
+      this._lastSavedAt = now()
     } catch (e) {
       console.warn('[LayerStore] save failed:', e)
     }
@@ -149,7 +157,15 @@ class LayerStore {
       const raw = localStorage.getItem(STORAGE_KEY)
       if (raw) this._layers = JSON.parse(raw)
     } catch {
-      this._layers = []
+      try {
+        const backup = localStorage.getItem(STORAGE_BACKUP_KEY)
+        this._layers = backup ? JSON.parse(backup) : []
+        if (this._layers.length) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(this._layers))
+        }
+      } catch {
+        this._layers = []
+      }
     }
     // Đảm bảo luôn có ít nhất 1 lớp mặc định
     if (this._layers.length === 0) {
@@ -159,6 +175,26 @@ class LayerStore {
 
   _notify() {
     this._listeners.forEach(fn => fn(this.snapshot()))
+  }
+
+  _captureState() {
+    return {
+      layers: JSON.parse(JSON.stringify(this._layers)),
+      selected: this._selected ? { ...this._selected } : null,
+    }
+  }
+
+  _recordHistory() {
+    this._undoStack.push(this._captureState())
+    if (this._undoStack.length > HISTORY_LIMIT) this._undoStack.shift()
+    this._redoStack = []
+  }
+
+  _restoreState(state) {
+    this._layers = JSON.parse(JSON.stringify(state.layers))
+    this._selected = state.selected ? { ...state.selected } : null
+    this._save()
+    this._notify()
   }
 
   /** Subscribe thay đổi — trả về unsubscribe fn */
@@ -172,6 +208,9 @@ class LayerStore {
     return {
       layers:   JSON.parse(JSON.stringify(this._layers)),
       selected: this._selected ? { ...this._selected } : null,
+      canUndo: this._undoStack.length > 0,
+      canRedo: this._redoStack.length > 0,
+      lastSavedAt: this._lastSavedAt,
     }
   }
 
@@ -214,6 +253,7 @@ class LayerStore {
   }
 
   addLayer(name, color) {
+    this._recordHistory()
     const layer = this._makeLayer(
       name || `Lớp ${this._layers.length + 1}`,
       color || LAYER_COLORS[this._layers.length % LAYER_COLORS.length]
@@ -226,6 +266,7 @@ class LayerStore {
 
   removeLayer(layerId) {
     if (this._layers.length <= 1) return false  // giữ ít nhất 1 lớp
+    this._recordHistory()
     this._layers = this._layers.filter(l => l.id !== layerId)
     if (this._selected?.layerId === layerId) this._selected = null
     this._save()
@@ -236,6 +277,7 @@ class LayerStore {
   updateLayer(layerId, patch) {
     const layer = this._getLayer(layerId)
     if (!layer) return
+    this._recordHistory()
     Object.assign(layer, patch)
     // Nếu đổi color → tự động cập nhật fillColor
     if (patch.color) layer.fillColor = hexToFill(patch.color)
@@ -245,6 +287,7 @@ class LayerStore {
 
   reorderLayers(fromIdx, toIdx) {
     if (fromIdx === toIdx) return
+    this._recordHistory()
     const arr = [...this._layers]
     const [moved] = arr.splice(fromIdx, 1)
     arr.splice(toIdx, 0, moved)
@@ -259,6 +302,7 @@ class LayerStore {
   addParcel(layerId, coordinates, attributes = {}) {
     const layer = this._getLayer(layerId)
     if (!layer) return null
+    this._recordHistory()
     const geom = computeParcelGeom(coordinates)
     const parcel = {
       id:          uuid(),
@@ -280,6 +324,7 @@ class LayerStore {
   updateParcelCoords(layerId, parcelId, coordinates) {
     const parcel = this._getParcel(layerId, parcelId)
     if (!parcel) return
+    this._recordHistory()
     const geom = computeParcelGeom(coordinates)
     parcel.coordinates  = JSON.parse(JSON.stringify(coordinates))
     parcel.area_m2      = geom.area_m2
@@ -292,6 +337,7 @@ class LayerStore {
   updateParcelAttributes(layerId, parcelId, attrs) {
     const parcel = this._getParcel(layerId, parcelId)
     if (!parcel) return
+    this._recordHistory()
     parcel.attributes = { ...parcel.attributes, ...attrs }
     parcel.updatedAt  = now()
     this._save()
@@ -301,6 +347,7 @@ class LayerStore {
   removeParcel(layerId, parcelId) {
     const layer = this._getLayer(layerId)
     if (!layer) return
+    this._recordHistory()
     layer.parcels = layer.parcels.filter(p => p.id !== parcelId)
     if (this._selected?.parcelId === parcelId) this._selected = null
     this._save()
@@ -314,6 +361,51 @@ class LayerStore {
       ...c, x: c.x + 2, y: c.y + 2   // dịch nhẹ để tránh chồng lên nhau
     }))
     return this.addParcel(layerId, offsetCoords, { ...parcel.attributes })
+  }
+
+  updateParcelsAttributes(selections, attrs) {
+    const targets = selections
+      .map(({ layerId, parcelId }) => this._getParcel(layerId, parcelId))
+      .filter(Boolean)
+    if (!targets.length) return 0
+    this._recordHistory()
+    targets.forEach(parcel => {
+      parcel.attributes = { ...parcel.attributes, ...attrs }
+      parcel.updatedAt = now()
+    })
+    this._save()
+    this._notify()
+    return targets.length
+  }
+
+  removeParcels(selections) {
+    const keys = new Set(selections.map(item => `${item.layerId}:${item.parcelId}`))
+    if (!keys.size) return 0
+    const removed = this._layers.reduce((count, layer) =>
+      count + layer.parcels.filter(parcel => keys.has(`${layer.id}:${parcel.id}`)).length, 0)
+    if (!removed) return 0
+    this._recordHistory()
+    this._layers.forEach(layer => {
+      layer.parcels = layer.parcels.filter(parcel => !keys.has(`${layer.id}:${parcel.id}`))
+    })
+    if (this._selected && keys.has(`${this._selected.layerId}:${this._selected.parcelId}`)) this._selected = null
+    this._save()
+    this._notify()
+    return removed
+  }
+
+  undo() {
+    if (!this._undoStack.length) return false
+    this._redoStack.push(this._captureState())
+    this._restoreState(this._undoStack.pop())
+    return true
+  }
+
+  redo() {
+    if (!this._redoStack.length) return false
+    this._undoStack.push(this._captureState())
+    this._restoreState(this._redoStack.pop())
+    return true
   }
 
   // ── SELECTION ─────────────────────────────────────────────
@@ -378,6 +470,7 @@ class LayerStore {
   /** Import từ JSON đã xuất */
   importJSON(json) {
     if (!json?.layers) throw new Error('File JSON không hợp lệ')
+    this._recordHistory()
     this._layers  = json.layers.map((l, i) => ({
       id:        l.id || uuid(),
       name:      l.name || `Lớp ${i + 1}`,
@@ -407,6 +500,7 @@ class LayerStore {
 
   /** Reset toàn bộ về mặc định */
   reset() {
+    this._recordHistory()
     this._layers   = [this._makeLayer('Lớp thửa đất', '#2196F3')]
     this._selected = null
     this._save()

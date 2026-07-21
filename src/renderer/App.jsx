@@ -15,7 +15,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import CanvasEditor          from '@components/CanvasEditor'
-import DataInputPanel        from '@components/DataInputPanel'
+import DataInputModal        from '@components/DataInputModal'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -26,14 +26,27 @@ import { loadSettingsFromFile } from '@modules/settingsStore'
 import './App.css'
 
 // ── Tool definitions ──────────────────────────────────────
-const TOOLS = [
-  { id: 'pick',      icon: '⬡',  label: 'Chọn vùng',        shortcut: 'V' },
-  { id: 'boxselect', icon: '⬚',  label: 'Quét chọn vùng',   shortcut: 'B' },
-  { id: 'draw',      icon: '✏',  label: 'Vẽ vùng',          shortcut: 'D' },
-  { id: 'select',    icon: '↔',  label: 'Sửa đỉnh',         shortcut: 'S' },
-  { id: 'measure',   icon: '📏', label: 'Đo khoảng cách',   shortcut: 'M' },
-  { id: 'pan',       icon: '✋', label: 'Di chuyển',         shortcut: 'H' },
+const TOOL_GROUPS = [
+  {
+    id: 'selection', label: 'Chọn', tools: [
+      { id: 'pick', icon: '⬡', label: 'Chọn vùng', shortcut: 'V' },
+      { id: 'boxselect', icon: '⬚', label: 'Quét nhiều vùng', shortcut: 'B' },
+    ]
+  },
+  {
+    id: 'editing', label: 'Biên tập', tools: [
+      { id: 'draw', icon: '✏', label: 'Vẽ vùng', shortcut: 'D' },
+      { id: 'select', icon: '↔', label: 'Sửa đỉnh', shortcut: 'S' },
+      { id: 'measure', icon: '📏', label: 'Đo khoảng cách', shortcut: 'M' },
+    ]
+  },
+  {
+    id: 'navigation', label: 'Điều hướng', tools: [
+      { id: 'pan', icon: '✋', label: 'Di chuyển view', shortcut: 'H' },
+    ]
+  },
 ]
+const TOOLS = TOOL_GROUPS.flatMap(group => group.tools)
 
 export default function App() {
   const canvasRef = useRef(null)
@@ -41,9 +54,11 @@ export default function App() {
   // ── Layer manager (store wrapper) ──────────────────────
   const {
     layers, selected,
+    canUndo, canRedo, lastSavedAt,
     addLayer, removeLayer, updateLayer, reorderLayers,
     addParcel, updateParcelCoords, updateParcelAttributes,
-    removeParcel, duplicateParcel,
+    removeParcel, duplicateParcel, updateParcelsAttributes, removeParcels,
+    undo, redo,
     selectParcel, clearSelection, getSelectedParcel,
     getActiveLayerId,
     exportJSON, importJSON, resetStore,
@@ -54,6 +69,7 @@ export default function App() {
   const [activeLayerId,  setActiveLayerId]  = useState(() => layers[0]?.id)
   const [province,       setProvince]       = useState('hochiminh')
   const [showSettings,   setShowSettings]   = useState(false)
+  const [showDataInput,  setShowDataInput]  = useState(false)
   const [rightTab,       setRightTab]       = useState('layers') // 'layers' | 'attrs' | 'multisel'
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
   // Multi-select: [{ layerId, parcelId }]
@@ -83,6 +99,16 @@ export default function App() {
   useEffect(() => {
     const handler = (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        e.shiftKey ? redo() : undo()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        redo()
+        return
+      }
       const t = TOOLS.find(t => t.shortcut === e.key.toUpperCase())
       if (t) { setTool(t.id); if (t.id !== 'boxselect') setMultiSelected([]) }
       if (e.key === 'Escape') { clearSelection(); setMultiSelected([]) }
@@ -92,14 +118,14 @@ export default function App() {
       // Delete xóa hàng loạt khi multi-select
       if (e.key === 'Delete' && multiSelected.length > 0 && !selected?.parcelId) {
         if (window.confirm(`Xóa ${multiSelected.length} vùng đã chọn?`)) {
-          multiSelected.forEach(({ layerId, parcelId }) => removeParcel(layerId, parcelId))
+          removeParcels(multiSelected)
           setMultiSelected([])
         }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selected, multiSelected])
+  }, [selected, multiSelected, undo, redo, removeParcels])
 
   // ── Handlers ────────────────────────────────────────────
 
@@ -197,35 +223,14 @@ export default function App() {
 
       {/* ══ TOP BAR ══ */}
       <header className="top-bar">
-        <div className="top-bar-left">
-          <span className="app-logo">⬡</span>
-          <span className="app-title">VN-LandEditor</span>
-          <span className="app-version">v1.0</span>
-        </div>
+        <div className="top-bar-main">
+          <div className="top-bar-left">
+            <span className="app-logo">⬡</span>
+            <span className="app-title">VN-LandEditor</span>
+            <span className="app-version">v1.0</span>
+          </div>
 
-        {/* Toolbar tools */}
-        <div className="toolbar">
-          {TOOLS.map(t => (
-            <button
-              key={t.id}
-              className={`toolbar-btn ${tool === t.id ? 'toolbar-btn--active' : ''}`}
-              onClick={() => setTool(t.id)}
-              title={`${t.label} [${t.shortcut}]`}
-            >
-              <span className="toolbar-btn-icon">{t.icon}</span>
-              <span className="toolbar-btn-label">{t.label}</span>
-            </button>
-          ))}
-
-          <div className="toolbar-sep" />
-
-          <button className="toolbar-btn" onClick={handleFitView} title="Fit toàn bộ [F]">
-            <span className="toolbar-btn-icon">⊡</span>
-            <span className="toolbar-btn-label">Fit view</span>
-          </button>
-        </div>
-
-        <div className="top-bar-right">
+          <div className="top-bar-right">
           {/* Province selector */}
           <label className="province-label">Tỉnh/Thành:</label>
           <select
@@ -239,6 +244,9 @@ export default function App() {
           </select>
 
           {/* Import / Export */}
+          <button className="top-btn top-btn--data" onClick={() => setShowDataInput(true)} title="Nhập tọa độ hoặc quét OCR">
+            ＋ Nhập dữ liệu
+          </button>
           <button className="top-btn" onClick={handleImport} title="Import JSON">⬆ Import</button>
           <button className="top-btn top-btn--primary" onClick={handleExport} title="Xuất JSON chuẩn VN-2000">⬇ Xuất JSON</button>
 
@@ -248,27 +256,56 @@ export default function App() {
             onClick={() => setShowSettings(true)}
             title="Cài đặt AI"
           >⚙</button>
+          </div>
+        </div>
+
+        <div className="toolbar">
+          {TOOL_GROUPS.map(group => (
+            <div className="toolbar-group" key={group.id}>
+              <span className="toolbar-group-label">{group.label}</span>
+              <div className="toolbar-group-buttons">
+                {group.tools.map(item => (
+                  <button
+                    key={item.id}
+                    className={`toolbar-btn ${tool === item.id ? 'toolbar-btn--active' : ''}`}
+                    onClick={() => setTool(item.id)}
+                    title={`${item.label} [${item.shortcut}]`}
+                    aria-label={`${item.label} [${item.shortcut}]`}
+                  >
+                    <span className="toolbar-btn-icon">{item.icon}</span>
+                    <span className="toolbar-btn-label">{item.label}</span>
+                    <kbd>{item.shortcut}</kbd>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          <div className="toolbar-group">
+            <span className="toolbar-group-label">Lịch sử</span>
+            <div className="toolbar-group-buttons">
+              <button className="toolbar-btn" onClick={undo} disabled={!canUndo} title="Hoàn tác [Ctrl+Z]">
+                <span className="toolbar-btn-icon">↶</span><span className="toolbar-btn-label">Undo</span>
+              </button>
+              <button className="toolbar-btn" onClick={redo} disabled={!canRedo} title="Làm lại [Ctrl+Y]">
+                <span className="toolbar-btn-icon">↷</span><span className="toolbar-btn-label">Redo</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="toolbar-group toolbar-group--last">
+            <span className="toolbar-group-label">Khung nhìn</span>
+            <div className="toolbar-group-buttons">
+              <button className="toolbar-btn" onClick={handleFitView} title="Fit toàn bộ bản vẽ">
+                <span className="toolbar-btn-icon">⊡</span><span className="toolbar-btn-label">Fit view</span>
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
       {/* ══ MAIN LAYOUT ══ */}
       <div className="main-layout">
-
-        {/* ── Input / OCR panel ───────────────────────────── */}
-        <aside className="left-panel">
-          <DataInputPanel
-            activeLayer={activeLayer}
-            onCreateParcel={(coordinates) => {
-              if (!activeLayerId) return
-              const parcelId = addParcel(activeLayerId, coordinates)
-              if (parcelId) {
-                selectParcel(activeLayerId, parcelId)
-                setTool('pick')
-              }
-            }}
-            onOpenSettings={() => setShowSettings(true)}
-          />
-        </aside>
 
         {/* ── Canvas ─────────────────────────────────────── */}
         <div className="canvas-area">
@@ -345,10 +382,11 @@ export default function App() {
                 }}
                 onDeleteAll={() => {
                   if (window.confirm(`Xóa ${multiSelected.length} vùng đã chọn?`)) {
-                    multiSelected.forEach(({ layerId, parcelId }) => removeParcel(layerId, parcelId))
+                    removeParcels(multiSelected)
                     setMultiSelected([])
                   }
                 }}
+                onBatchUpdate={(attrs) => updateParcelsAttributes(multiSelected, attrs)}
                 onExportSelected={() => {
                   const prov = PROVINCES[province]
                   const selSet = new Set(multiSelected.map(s => s.parcelId))
@@ -404,6 +442,9 @@ export default function App() {
                 S = {statusBar.area.toFixed(2)} m²
               </span>
             )}
+            <span className="autosave-status" title={lastSavedAt || 'Dữ liệu được tự động lưu cục bộ'}>
+              ● Đã tự lưu
+            </span>
           </div>
         </aside>
       </div>
@@ -413,6 +454,25 @@ export default function App() {
         open={showSettings}
         onClose={() => setShowSettings(false)}
         onSaved={() => setShowSettings(false)}
+      />
+
+      <DataInputModal
+        open={showDataInput}
+        activeLayer={activeLayer}
+        onClose={() => setShowDataInput(false)}
+        onCreateParcel={(coordinates) => {
+          if (!activeLayerId) return
+          const parcelId = addParcel(activeLayerId, coordinates)
+          if (parcelId) {
+            selectParcel(activeLayerId, parcelId)
+            setTool('pick')
+            setShowDataInput(false)
+          }
+        }}
+        onOpenSettings={() => {
+          setShowDataInput(false)
+          setShowSettings(true)
+        }}
       />
     </div>
   )
