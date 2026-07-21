@@ -47,6 +47,7 @@ html, body, #root {
   flex-shrink: 0;
   user-select: none;
   z-index: 100;
+  overflow: visible;
 }
 
 .top-bar-main {
@@ -94,8 +95,7 @@ html, body, #root {
   gap: 4px;
   height: 46px;
   padding: 4px 10px 5px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: visible;
   border-top: 1px solid rgba(255,255,255,0.035);
   background: #151a2d;
   scrollbar-width: thin;
@@ -110,6 +110,17 @@ html, body, #root {
   padding: 0 7px 0 6px;
   border-right: 1px solid #27304d;
   flex-shrink: 0;
+}
+
+.toolbar-palettes {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 7px;
+  border-right: 1px solid #27304d;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 120;
 }
 
 .toolbar-group--last { border-right: 0; }
@@ -219,6 +230,11 @@ html, body, #root {
   background: rgba(255,255,255,0.05);
   color: var(--text-main);
 }
+.top-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+.top-btn:disabled:hover { background: transparent; color: var(--text-muted); }
 .top-btn--primary {
   background: var(--accent);
   border-color: var(--accent);

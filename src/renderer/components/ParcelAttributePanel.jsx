@@ -68,6 +68,7 @@ export default function ParcelAttributePanel({
   onDeselect,   // () => void
   onRemove,     // (layerId, parcelId) => void
   onDuplicate,  // (layerId, parcelId) => void
+  onEditGeometry,
 }) {
   const [form,    setForm]    = useState({ ...DEFAULT_PARCEL_ATTRS })
   const [dirty,   setDirty]   = useState(false)
@@ -257,6 +258,11 @@ export default function ParcelAttributePanel({
       {/* ── Footer actions ── */}
       <div className="pap-footer">
         <div className="pap-footer-left">
+          <button
+            className="pap-action-btn pap-action-btn--ghost"
+            onClick={() => onEditGeometry?.(layer.id, parcel.id)}
+            title="Chỉnh bảng tọa độ và dịch chuyển thửa"
+          >⌖ Tọa độ</button>
           <button
             className="pap-action-btn pap-action-btn--ghost"
             onClick={() => onDuplicate?.(layer.id, parcel.id)}

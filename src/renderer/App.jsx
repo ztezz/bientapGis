@@ -22,6 +22,9 @@ import MapNavigator          from '@components/MapNavigator'
 import BasemapControl        from '@components/BasemapControl'
 import ImportModal           from '@components/ImportModal'
 import ParcelSearchModal     from '@components/ParcelSearchModal'
+import ParcelReportModal     from '@components/ParcelReportModal'
+import ToolPalette           from '@components/ToolPalette'
+import GeometryEditModal     from '@components/GeometryEditModal'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -37,22 +40,24 @@ const BasemapLayer = lazy(() => import('@components/BasemapLayer'))
 const TOOL_GROUPS = [
   {
     id: 'selection', label: 'Chọn', tools: [
-      { id: 'pick', icon: '⬡', label: 'Chọn vùng', shortcut: 'V' },
-      { id: 'boxselect', icon: '⬚', label: 'Quét nhiều vùng', shortcut: 'B' },
+      { id: 'pick', icon: '⬡', label: 'Chọn vùng', shortcut: 'V', description: 'Chọn một thửa để xem thuộc tính' },
+      { id: 'boxselect', icon: '⬚', label: 'Quét nhiều vùng', shortcut: 'B', description: 'Kéo khung chọn nhiều đối tượng' },
     ]
   },
   {
     id: 'editing', label: 'Biên tập', tools: [
-      { id: 'draw', icon: '✏', label: 'Vẽ vùng', shortcut: 'D' },
-      { id: 'select', icon: '↔', label: 'Sửa đỉnh', shortcut: 'S' },
-      { id: 'addvertex', icon: '＋', label: 'Thêm đỉnh', shortcut: 'A' },
-      { id: 'deletevertex', icon: '−', label: 'Xóa đỉnh', shortcut: 'X' },
-      { id: 'measure', icon: '📏', label: 'Đo khoảng cách', shortcut: 'M' },
+      { id: 'draw', icon: '✏', label: 'Vẽ vùng', shortcut: 'D', description: 'Vẽ polygon thửa đất mới' },
+      { id: 'select', icon: '↔', label: 'Sửa đỉnh', shortcut: 'S', description: 'Kéo các đỉnh của thửa đang chọn' },
+      { id: 'addvertex', icon: '＋', label: 'Thêm đỉnh', shortcut: 'A', description: 'Chèn điểm mới lên cạnh gần nhất' },
+      { id: 'deletevertex', icon: '−', label: 'Xóa đỉnh', shortcut: 'X', description: 'Xóa đỉnh, giữ tối thiểu ba điểm' },
     ]
   },
+  { id: 'measure', label: 'Đo', tools: [
+    { id: 'measure', icon: '📏', label: 'Đo khoảng cách', shortcut: 'M', description: 'Đo chiều dài giữa hai vị trí' },
+  ] },
   {
     id: 'navigation', label: 'Điều hướng', tools: [
-      { id: 'pan', icon: '✋', label: 'Di chuyển view', shortcut: 'H' },
+      { id: 'pan', icon: '✋', label: 'Di chuyển view', shortcut: 'H', description: 'Kéo canvas để điều hướng' },
     ]
   },
 ]
@@ -84,6 +89,8 @@ export default function App() {
   const [showExport,     setShowExport]     = useState(false)
   const [showImport,     setShowImport]     = useState(false)
   const [showSearch,     setShowSearch]     = useState(false)
+  const [showReport,     setShowReport]     = useState(false)
+  const [showGeometry,   setShowGeometry]   = useState(false)
   const [snapping,       setSnapping]       = useState(true)
   const [viewportInfo,   setViewportInfo]   = useState({ zoom: 1, scaleMetersPer100Px: null, worldBounds: null })
   const [basemapEnabled, setBasemapEnabled] = useState(() => localStorage.getItem('vn_basemap_enabled') === 'true')
@@ -244,6 +251,7 @@ export default function App() {
             ✓ Kiểm tra
           </button>
           <button className="top-btn" onClick={() => setShowSearch(true)} title="Tra cứu thửa đất [Ctrl+F]">⌕ Tra cứu</button>
+          <button className="top-btn" disabled={!selected?.parcelId} onClick={() => setShowReport(true)} title="Lập hồ sơ kỹ thuật cho thửa đang chọn">▤ Hồ sơ</button>
           <button className="top-btn" onClick={() => setShowImport(true)} title="Import JSON, GeoJSON hoặc CSV">⬆ Import GIS</button>
           <button className="top-btn top-btn--primary" onClick={() => setShowExport(true)} title="Xuất JSON, GeoJSON hoặc CSV">⬇ Xuất GIS</button>
 
@@ -257,26 +265,11 @@ export default function App() {
         </div>
 
         <div className="toolbar">
-          {TOOL_GROUPS.map(group => (
-            <div className="toolbar-group" key={group.id}>
-              <span className="toolbar-group-label">{group.label}</span>
-              <div className="toolbar-group-buttons">
-                {group.tools.map(item => (
-                  <button
-                    key={item.id}
-                    className={`toolbar-btn ${tool === item.id ? 'toolbar-btn--active' : ''}`}
-                    onClick={() => setTool(item.id)}
-                    title={`${item.label} [${item.shortcut}]`}
-                    aria-label={`${item.label} [${item.shortcut}]`}
-                  >
-                    <span className="toolbar-btn-icon">{item.icon}</span>
-                    <span className="toolbar-btn-label">{item.label}</span>
-                    <kbd>{item.shortcut}</kbd>
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
+          <div className="toolbar-palettes">
+            {TOOL_GROUPS.map(group => (
+              <ToolPalette key={group.id} group={group} activeTool={tool} onSelect={setTool} />
+            ))}
+          </div>
 
           <div className="toolbar-group">
             <span className="toolbar-group-label">Lịch sử</span>
@@ -477,6 +470,7 @@ export default function App() {
                 onDeselect={clearSelection}
                 onRemove={removeParcel}
                 onDuplicate={duplicateParcel}
+                onEditGeometry={() => setShowGeometry(true)}
               />
             )}
           </div>
@@ -573,6 +567,23 @@ export default function App() {
           setRightTab('attrs')
           setTool('pick')
           requestAnimationFrame(() => canvasRef.current?.focusParcel(layerId, parcelId))
+        }}
+      />
+
+      <ParcelReportModal
+        open={showReport}
+        parcel={selectedParcel}
+        layer={selectedLayer}
+        province={PROVINCES[province]}
+        onClose={() => setShowReport(false)}
+      />
+
+      <GeometryEditModal
+        open={showGeometry}
+        parcel={selectedParcel}
+        onClose={() => setShowGeometry(false)}
+        onSave={(coordinates) => {
+          if (selected) updateParcelCoords(selected.layerId, selected.parcelId, coordinates)
         }}
       />
     </div>

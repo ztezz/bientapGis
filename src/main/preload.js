@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   loadSettings:    ()       => ipcRenderer.invoke('settings:load'),
   saveSettings:    (data)   => ipcRenderer.invoke('settings:save', data),
   getSettingsPath: ()       => ipcRenderer.invoke('settings:getPath'),
+  saveReportPDF:   (payload) => ipcRenderer.invoke('report:savePDF', payload),
+  printReport:     (html)    => ipcRenderer.invoke('report:print', html),
 
   // Platform check
   platform: process.platform

@@ -192,3 +192,47 @@ ipcMain.handle('settings:save', (event, data) => {
  * Lấy đường dẫn file settings (để hiển thị trong UI)
  */
 ipcMain.handle('settings:getPath', () => SETTINGS_FILE)
+
+async function createReportWindow(html) {
+  const reportWindow = new BrowserWindow({
+    show: false,
+    width: 900,
+    height: 1100,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+  })
+  await reportWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`)
+  return reportWindow
+}
+
+ipcMain.handle('report:savePDF', async (event, payload) => {
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Lưu hồ sơ kỹ thuật PDF',
+    defaultPath: payload.defaultName || 'ho-so-ky-thuat-thua-dat.pdf',
+    filters: [{ name: 'PDF Files', extensions: ['pdf'] }]
+  })
+  if (canceled || !filePath) return { success: false, canceled: true }
+  let reportWindow
+  try {
+    reportWindow = await createReportWindow(String(payload.html || ''))
+    const data = await reportWindow.webContents.printToPDF({ printBackground: true, pageSize: 'A4', margins: { top: 0.4, bottom: 0.4, left: 0.4, right: 0.4 } })
+    fs.writeFileSync(filePath, data)
+    return { success: true, filePath }
+  } catch (err) {
+    return { success: false, error: err.message }
+  } finally {
+    reportWindow?.close()
+  }
+})
+
+ipcMain.handle('report:print', async (event, html) => {
+  let reportWindow
+  try {
+    reportWindow = await createReportWindow(String(html || ''))
+    reportWindow.show()
+    reportWindow.webContents.print({ silent: false, printBackground: true }, () => reportWindow?.close())
+    return { success: true }
+  } catch (err) {
+    reportWindow?.close()
+    return { success: false, error: err.message }
+  }
+})
