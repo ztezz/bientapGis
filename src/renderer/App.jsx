@@ -37,6 +37,8 @@ const TOOL_GROUPS = [
     id: 'editing', label: 'Biên tập', tools: [
       { id: 'draw', icon: '✏', label: 'Vẽ vùng', shortcut: 'D' },
       { id: 'select', icon: '↔', label: 'Sửa đỉnh', shortcut: 'S' },
+      { id: 'addvertex', icon: '＋', label: 'Thêm đỉnh', shortcut: 'A' },
+      { id: 'deletevertex', icon: '−', label: 'Xóa đỉnh', shortcut: 'X' },
       { id: 'measure', icon: '📏', label: 'Đo khoảng cách', shortcut: 'M' },
     ]
   },

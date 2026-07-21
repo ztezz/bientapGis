@@ -82,6 +82,25 @@ function canvasToWorld(point, transform) {
   }
 }
 
+function nearestPointOnPolygonEdges(pointer, points) {
+  if (!points?.length) return null
+  let best = null
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]
+    const b = points[(i + 1) % points.length]
+    const abX = b.x - a.x
+    const abY = b.y - a.y
+    const lengthSq = abX * abX + abY * abY
+    const t = lengthSq === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((pointer.x - a.x) * abX + (pointer.y - a.y) * abY) / lengthSq))
+    const point = { x: a.x + t * abX, y: a.y + t * abY }
+    const distance = Math.hypot(pointer.x - point.x, pointer.y - point.y)
+    if (!best || distance < best.distance) best = { edgeIndex: i, point, distance }
+  }
+  return best
+}
+
 /** Tính bounding box tất cả coords trong tất cả lớp */
 function globalBBox(layers) {
   let xs = [], ys = []
@@ -141,6 +160,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   const registry   = useRef(new Map())
 
   const [status, setStatus] = useState('Sẵn sàng | Alt+Drag hoặc giữa chuột để pan | Scroll để zoom')
+  const [cursorCoord, setCursorCoord] = useState(null)
 
   // ── Khởi tạo canvas ─────────────────────────────────────
 
@@ -161,6 +181,14 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       canvas.setHeight(initialWrapper.clientHeight)
     }
     drawGrid(canvas)
+
+    canvas.on('mouse:move', opt => {
+      const tr = transformRef.current
+      if (!tr || isPanning.current) return
+      const pointer = canvas.getPointer(opt.e)
+      setCursorCoord(canvasToWorld(pointer, tr))
+    })
+    canvas.on('mouse:out', () => setCursorCoord(null))
 
     // Zoom
     canvas.on('mouse:wheel', opt => {
@@ -260,6 +288,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       measure:   'crosshair',
       pan:       'grab',
       boxselect: 'crosshair',
+      addvertex: 'crosshair',
+      deletevertex: 'not-allowed',
     }
     canvas.setCursor(cursorMap[tool] || 'default')
     canvas.skipTargetFind = tool === 'pan' || tool === 'draw' || tool === 'measure' || tool === 'boxselect'
@@ -285,6 +315,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       setStatus('Click vào vùng để chọn | [B] Quét chọn nhiều vùng')
     } else if (tool === 'select') {
       setStatus('Kéo đỉnh để điều chỉnh vị trí')
+    } else if (tool === 'addvertex') {
+      setStatus('Click gần cạnh của vùng đang chọn để chèn đỉnh mới')
+    } else if (tool === 'deletevertex') {
+      setStatus('Click vào đỉnh của vùng đang chọn để xóa | Tối thiểu 3 đỉnh')
     } else if (tool === 'pan') {
       setStatus('Kéo để di chuyển bản đồ | Scroll để zoom')
     }
@@ -294,7 +328,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const obj = canvas.getObjects().find(o => o.__id === objId)
       if (!obj || info.role !== 'vertex') return
       const canEdit = tool === 'select'
-      obj.set({ selectable: canEdit, evented: canEdit })
+      const canDelete = tool === 'deletevertex'
+      obj.set({ selectable: canEdit, evented: canEdit || canDelete })
     })
     canvas.renderAll()
   }, [tool])
@@ -471,9 +506,31 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     registry.current.set(polyId, { layerId: layer.id, parcelId: parcel.id, role: 'polygon' })
 
     // Click polygon → select
-    poly.on('mousedown', () => {
+    poly.on('mousedown', opt => {
       if (tool === 'pick') {
         onParcelSelected?.(layer.id, parcel.id)
+      } else if (tool === 'addvertex' && isSelected && !layer.locked) {
+        const pointer = canvas.getPointer(opt.e)
+        const nearest = nearestPointOnPolygonEdges(pointer, pts)
+        const threshold = 14 / (canvas.getZoom() || 1)
+        if (!nearest || nearest.distance > threshold) {
+          setStatus('Hãy click gần một cạnh của vùng đang chọn')
+          return
+        }
+
+        const worldPoint = canvasToWorld(nearest.point, transformRef.current)
+        const nextCoords = [...parcel.coordinates]
+        nextCoords.splice(nearest.edgeIndex + 1, 0, {
+          point: '',
+          x: worldPoint.x,
+          y: worldPoint.y,
+        })
+        const normalized = nextCoords.map((coord, index) => ({
+          ...coord,
+          point: String(index + 1),
+        }))
+        onVertexMoved?.(layer.id, parcel.id, normalized)
+        setStatus(`Đã chèn đỉnh mới sau điểm ${nearest.edgeIndex + 1}`)
       }
     })
 
@@ -532,7 +589,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     }
 
     // ── Vertices (chỉ render khi tool = select và lớp không bị lock) ──
-    if (tool === 'select' && !layer.locked && isSelected) {
+    if ((tool === 'select' || tool === 'deletevertex') && !layer.locked && isSelected) {
       pts.forEach((sp, i) => {
         const coord = parcel.coordinates[i]
         const vId = `vert_${parcel.id}_${i}`
@@ -546,12 +603,12 @@ const CanvasEditor = forwardRef(function CanvasEditor(
           top:  sp.y,
           originX: 'center',
           originY: 'center',
-          selectable: true,
+          selectable: tool === 'select',
           evented: true,
           hasControls: false,
           hasBorders: false,
-          hoverCursor: 'grab',
-          moveCursor:  'grabbing',
+          hoverCursor: tool === 'deletevertex' ? 'not-allowed' : 'grab',
+          moveCursor:  tool === 'deletevertex' ? 'not-allowed' : 'grabbing',
           opacity,
         })
         vId && (vert.__id = vId)
@@ -560,8 +617,22 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         vert.on('mouseover', () => { vert.set({ fill: '#FF5722', radius: VERTEX_R + 2 }); canvas.renderAll() })
         vert.on('mouseout',  () => { vert.set({ fill: '#FF9800', radius: VERTEX_R });     canvas.renderAll() })
 
+        if (tool === 'deletevertex') {
+          vert.on('mousedown', () => {
+            if (parcel.coordinates.length <= 3) {
+              setStatus('Không thể xóa: polygon phải có ít nhất 3 đỉnh')
+              return
+            }
+            const nextCoords = parcel.coordinates
+              .filter((_, coordIndex) => coordIndex !== i)
+              .map((coord, coordIndex) => ({ ...coord, point: String(coordIndex + 1) }))
+            onVertexMoved?.(layer.id, parcel.id, nextCoords)
+            setStatus(`Đã xóa đỉnh ${i + 1} | Còn ${nextCoords.length} đỉnh`)
+          })
+        }
+
         // Moving → cập nhật polygon live
-        vert.on('moving', () => {
+        if (tool === 'select') vert.on('moving', () => {
           const center = vert.getCenterPoint()
           const moved = canvasToWorld(center, transformRef.current)
           const newCoords = parcel.coordinates.map((c, ci) =>
@@ -577,7 +648,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         })
 
         // Moved → commit
-        vert.on('moved', () => {
+        if (tool === 'select') vert.on('moved', () => {
           const center = vert.getCenterPoint()
           const moved = canvasToWorld(center, transformRef.current)
           const newCoords = parcel.coordinates.map((c, ci) =>
@@ -1058,10 +1129,19 @@ const CanvasEditor = forwardRef(function CanvasEditor(
           measure:   '📏 Đo',
           pan:       '✋ Pan',
           boxselect: '⬚ Quét chọn vùng',
+          addvertex: '＋ Thêm đỉnh',
+          deletevertex: '− Xóa đỉnh',
         }[tool] || tool}
       </div>
 
-      <div className="canvas-status-bar">{status}</div>
+      <div className="canvas-status-bar">
+        <span>{status}</span>
+        {cursorCoord && (
+          <span className="canvas-cursor-coord">
+            X: {cursorCoord.x.toFixed(3)} · Y: {cursorCoord.y.toFixed(3)}
+          </span>
+        )}
+      </div>
     </div>
   )
 })

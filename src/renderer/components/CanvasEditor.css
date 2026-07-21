@@ -59,4 +59,20 @@
   overflow: hidden;
   text-overflow: ellipsis;
   letter-spacing: 0.2px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.canvas-status-bar > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-cursor-coord {
+  flex-shrink: 0;
+  color: #93c5fd;
+  font-weight: 700;
 }
