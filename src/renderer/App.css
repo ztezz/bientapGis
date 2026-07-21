@@ -236,6 +236,16 @@ html, body, #root {
   background: rgba(16, 185, 129, 0.18);
   color: #a7f3d0;
 }
+.top-btn--validate {
+  border-color: rgba(251, 191, 36, 0.34);
+  background: rgba(251, 191, 36, 0.08);
+  color: #fcd34d;
+}
+.top-btn--validate:hover {
+  border-color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  color: #fde68a;
+}
 .top-btn--primary:hover {
   background: #5c7cfa;
   border-color: #5c7cfa;

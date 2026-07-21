@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { LAND_TYPES, DEFAULT_PARCEL_ATTRS } from '@modules/layerStore'
+import { validateParcel } from '@modules/parcelValidator'
 import './ParcelAttributePanel.css'
 
 const FIELD_DEFS = [
@@ -126,6 +127,7 @@ export default function ParcelAttributePanel({
   }
 
   const landType = LAND_TYPES.find(t => t.code === form.loaidat)
+  const validationIssues = validateParcel({ ...parcel, attributes: form })
 
   return (
     <div className="pap-panel">
@@ -174,6 +176,14 @@ export default function ParcelAttributePanel({
 
       {/* ── Form ── */}
       <div className="pap-form">
+        {validationIssues.length > 0 && (
+          <div className="pap-validation">
+            <strong>Kiểm tra dữ liệu: {validationIssues.length} vấn đề</strong>
+            {validationIssues.slice(0, 5).map((issue, index) => (
+              <p key={`${issue.code}-${index}`} className={`is-${issue.severity}`}>{issue.message}</p>
+            ))}
+          </div>
+        )}
         {FIELD_DEFS.map(fd => (
           <div key={fd.key} className="pap-field">
             <label className="pap-label">

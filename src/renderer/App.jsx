@@ -16,6 +16,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import CanvasEditor          from '@components/CanvasEditor'
 import DataInputModal        from '@components/DataInputModal'
+import ValidationModal       from '@components/ValidationModal'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -72,6 +73,8 @@ export default function App() {
   const [province,       setProvince]       = useState('hochiminh')
   const [showSettings,   setShowSettings]   = useState(false)
   const [showDataInput,  setShowDataInput]  = useState(false)
+  const [showValidation, setShowValidation] = useState(false)
+  const [snapping,       setSnapping]       = useState(true)
   const [rightTab,       setRightTab]       = useState('layers') // 'layers' | 'attrs' | 'multisel'
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
   // Multi-select: [{ layerId, parcelId }]
@@ -113,6 +116,7 @@ export default function App() {
       }
       const t = TOOLS.find(t => t.shortcut === e.key.toUpperCase())
       if (t) { setTool(t.id); if (t.id !== 'boxselect') setMultiSelected([]) }
+      if (e.key.toLowerCase() === 'n') setSnapping(value => !value)
       if (e.key === 'Escape') { clearSelection(); setMultiSelected([]) }
       if (e.key === 'Delete' && selected?.parcelId) {
         if (window.confirm('Xóa vùng đang chọn?')) removeParcel(selected.layerId, selected.parcelId)
@@ -249,6 +253,9 @@ export default function App() {
           <button className="top-btn top-btn--data" onClick={() => setShowDataInput(true)} title="Nhập tọa độ hoặc quét OCR">
             ＋ Nhập dữ liệu
           </button>
+          <button className="top-btn top-btn--validate" onClick={() => setShowValidation(true)} title="Kiểm tra hình học và thuộc tính">
+            ✓ Kiểm tra
+          </button>
           <button className="top-btn" onClick={handleImport} title="Import JSON">⬆ Import</button>
           <button className="top-btn top-btn--primary" onClick={handleExport} title="Xuất JSON chuẩn VN-2000">⬇ Xuất JSON</button>
 
@@ -298,6 +305,15 @@ export default function App() {
           <div className="toolbar-group toolbar-group--last">
             <span className="toolbar-group-label">Khung nhìn</span>
             <div className="toolbar-group-buttons">
+              <button
+                className={`toolbar-btn ${snapping ? 'toolbar-btn--active' : ''}`}
+                onClick={() => setSnapping(value => !value)}
+                title={`Bắt điểm ${snapping ? 'đang bật' : 'đang tắt'} [N]`}
+              >
+                <span className="toolbar-btn-icon">⌾</span>
+                <span className="toolbar-btn-label">Bắt điểm</span>
+                <kbd>N</kbd>
+              </button>
               <button className="toolbar-btn" onClick={handleFitView} title="Fit toàn bộ bản vẽ">
                 <span className="toolbar-btn-icon">⊡</span><span className="toolbar-btn-label">Fit view</span>
               </button>
@@ -317,6 +333,7 @@ export default function App() {
             activeLayerId={activeLayerId}
             selectedParcelId={selected?.parcelId}
             multiSelectedIds={multiSelected.map(s => s.parcelId)}
+            snappingEnabled={snapping}
             tool={tool}
             onParcelDrawn={handleParcelDrawn}
             onParcelSelected={handleParcelSelected}
@@ -474,6 +491,17 @@ export default function App() {
         onOpenSettings={() => {
           setShowDataInput(false)
           setShowSettings(true)
+        }}
+      />
+
+      <ValidationModal
+        open={showValidation}
+        layers={layers}
+        onClose={() => setShowValidation(false)}
+        onSelectParcel={(layerId, parcelId) => {
+          selectParcel(layerId, parcelId)
+          setRightTab('attrs')
+          setTool('pick')
         }}
       />
     </div>

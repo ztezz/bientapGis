@@ -124,6 +124,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     activeLayerId,
     selectedParcelId,
     multiSelectedIds = [],   // string[] parcelId đang được box-select
+    snappingEnabled = true,
     tool = 'pick',
     onParcelDrawn,      // (layerId, coordinates[]) => void
     onParcelSelected,   // (layerId, parcelId) => void
@@ -136,6 +137,9 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   const wrapperEl  = useRef(null)   // div wrapper — để đo kích thước thực
   const canvasEl   = useRef(null)   // <canvas> element — truyền vào fabric
   const fc         = useRef(null)   // fabric.Canvas
+  const activeToolRef = useRef(tool)
+  const snappingRef = useRef(snappingEnabled)
+  const layersRef = useRef(layers)
   const toolEvents = useRef({ down: null, dbl: null, move: null, up: null })
   const isPanning  = useRef(false)
   const lastPan    = useRef({ x: 0, y: 0 })
@@ -155,12 +159,81 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
   // Transform cache (để screenToCoord)
   const transformRef = useRef(null)
+  const snapMarkerRef = useRef(null)
 
   // Object registry: fabricObjectId → { layerId, parcelId, role }
   const registry   = useRef(new Map())
 
   const [status, setStatus] = useState('Sẵn sàng | Alt+Drag hoặc giữa chuột để pan | Scroll để zoom')
   const [cursorCoord, setCursorCoord] = useState(null)
+
+  useEffect(() => { activeToolRef.current = tool }, [tool])
+  useEffect(() => { snappingRef.current = snappingEnabled }, [snappingEnabled])
+  useEffect(() => { layersRef.current = layers }, [layers])
+
+  function getSnapResult(pointer, options = {}) {
+    if (!snappingRef.current || !transformRef.current) return null
+    const zoom = fc.current?.getZoom() || 1
+    const vertexThreshold = 12 / zoom
+    const edgeThreshold = 10 / zoom
+    let bestVertex = null
+    let bestEdge = null
+
+    layersRef.current.forEach(layer => {
+      if (!layer.visible) return
+      layer.parcels.forEach(parcel => {
+        const points = parcel.coordinates.map(coord => worldToCanvas(coord, transformRef.current))
+        points.forEach((point, index) => {
+          if (options.exclude?.parcelId === parcel.id && options.exclude?.vertexIndex === index) return
+          const distance = Math.hypot(pointer.x - point.x, pointer.y - point.y)
+          if (distance <= vertexThreshold && (!bestVertex || distance < bestVertex.distance)) {
+            bestVertex = { type: 'vertex', point, distance, layerId: layer.id, parcelId: parcel.id, vertexIndex: index }
+          }
+        })
+
+        const edge = nearestPointOnPolygonEdges(pointer, points)
+        if (edge && edge.distance <= edgeThreshold && (!bestEdge || edge.distance < bestEdge.distance)) {
+          bestEdge = { ...edge, type: 'edge', layerId: layer.id, parcelId: parcel.id }
+        }
+      })
+    })
+
+    return bestVertex || bestEdge
+  }
+
+  function showSnapMarker(snap) {
+    const canvas = fc.current
+    if (!canvas) return
+    if (!snap) {
+      if (snapMarkerRef.current) canvas.remove(snapMarkerRef.current)
+      snapMarkerRef.current = null
+      canvas.requestRenderAll()
+      return
+    }
+
+    if (snapMarkerRef.current) canvas.remove(snapMarkerRef.current)
+    const zoom = canvas.getZoom() || 1
+    const marker = snap.type === 'vertex'
+      ? new fabric.Circle({
+          left: snap.point.x, top: snap.point.y,
+          originX: 'center', originY: 'center',
+          radius: 7 / zoom,
+          fill: 'rgba(0, 255, 170, 0.18)', stroke: '#00ffaa', strokeWidth: 2 / zoom,
+          selectable: false, evented: false,
+        })
+      : new fabric.Rect({
+          left: snap.point.x, top: snap.point.y,
+          originX: 'center', originY: 'center',
+          width: 12 / zoom, height: 12 / zoom,
+          fill: 'rgba(255, 215, 0, 0.16)', stroke: '#ffd700', strokeWidth: 2 / zoom,
+          angle: 45, selectable: false, evented: false,
+        })
+    marker.__isSnapMarker = true
+    snapMarkerRef.current = marker
+    canvas.add(marker)
+    marker.bringToFront()
+    canvas.requestRenderAll()
+  }
 
   // ── Khởi tạo canvas ─────────────────────────────────────
 
@@ -187,8 +260,14 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       if (!tr || isPanning.current) return
       const pointer = canvas.getPointer(opt.e)
       setCursorCoord(canvasToWorld(pointer, tr))
+      if (['draw', 'select', 'addvertex'].includes(activeToolRef.current)) {
+        showSnapMarker(getSnapResult(pointer))
+      }
     })
-    canvas.on('mouse:out', () => setCursorCoord(null))
+    canvas.on('mouse:out', () => {
+      setCursorCoord(null)
+      showSnapMarker(null)
+    })
 
     // Zoom
     canvas.on('mouse:wheel', opt => {
@@ -250,6 +329,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       fc.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (!snappingEnabled) showSnapMarker(null)
+  }, [snappingEnabled])
 
   // ── Vẽ lại khi layers thay đổi ──────────────────────────
 
@@ -511,14 +594,18 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         onParcelSelected?.(layer.id, parcel.id)
       } else if (tool === 'addvertex' && isSelected && !layer.locked) {
         const pointer = canvas.getPointer(opt.e)
-        const nearest = nearestPointOnPolygonEdges(pointer, pts)
+        const snap = getSnapResult(pointer)
+        const nearest = snap?.parcelId === parcel.id && snap.type === 'edge'
+          ? snap
+          : nearestPointOnPolygonEdges(pointer, pts)
         const threshold = 14 / (canvas.getZoom() || 1)
         if (!nearest || nearest.distance > threshold) {
           setStatus('Hãy click gần một cạnh của vùng đang chọn')
           return
         }
 
-        const worldPoint = canvasToWorld(nearest.point, transformRef.current)
+        const scenePoint = snap?.type === 'vertex' ? snap.point : nearest.point
+        const worldPoint = canvasToWorld(scenePoint, transformRef.current)
         const nextCoords = [...parcel.coordinates]
         nextCoords.splice(nearest.edgeIndex + 1, 0, {
           point: '',
@@ -634,7 +721,11 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         // Moving → cập nhật polygon live
         if (tool === 'select') vert.on('moving', () => {
           const center = vert.getCenterPoint()
-          const moved = canvasToWorld(center, transformRef.current)
+          const snap = getSnapResult(center, { exclude: { parcelId: parcel.id, vertexIndex: i } })
+          const scenePoint = snap?.point || center
+          if (snap) vert.set({ left: scenePoint.x, top: scenePoint.y })
+          showSnapMarker(snap)
+          const moved = canvasToWorld(scenePoint, transformRef.current)
           const newCoords = parcel.coordinates.map((c, ci) =>
             ci === i ? { ...c, x: moved.x, y: moved.y } : c
           )
@@ -650,11 +741,14 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         // Moved → commit
         if (tool === 'select') vert.on('moved', () => {
           const center = vert.getCenterPoint()
-          const moved = canvasToWorld(center, transformRef.current)
+          const snap = getSnapResult(center, { exclude: { parcelId: parcel.id, vertexIndex: i } })
+          const scenePoint = snap?.point || center
+          const moved = canvasToWorld(scenePoint, transformRef.current)
           const newCoords = parcel.coordinates.map((c, ci) =>
             ci === i ? { ...c, x: moved.x, y: moved.y } : c
           )
           onVertexMoved?.(layer.id, parcel.id, newCoords)
+          showSnapMarker(null)
         })
 
         canvas.add(vert)
@@ -684,7 +778,9 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       state.previewPts = []
     }
 
-    const newPt = { x: ptr.x, y: ptr.y }
+    const snap = getSnapResult(ptr)
+    const newPt = snap ? { x: snap.point.x, y: snap.point.y } : { x: ptr.x, y: ptr.y }
+    showSnapMarker(snap)
 
     // Snap to first point → đóng vùng
     if (state.pts.length >= 3) {

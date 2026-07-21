@@ -186,6 +186,18 @@
   gap: 4px;
 }
 
+.pap-validation {
+  padding: 8px 10px;
+  border: 1px solid rgba(251, 191, 36, 0.22);
+  border-radius: 7px;
+  background: rgba(251, 191, 36, 0.05);
+}
+.pap-validation strong { display: block; margin-bottom: 5px; color: #fbbf24; font-size: 11.5px; }
+.pap-validation p { margin: 3px 0; font-size: 10.5px; line-height: 1.4; }
+.pap-validation .is-error { color: #f87171; }
+.pap-validation .is-warning { color: #fbbf24; }
+.pap-validation .is-info { color: #60a5fa; }
+
 .pap-label {
   font-size: 11.5px;
   font-weight: 600;

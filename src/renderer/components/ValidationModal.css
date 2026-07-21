@@ -1,0 +1,35 @@
+.validation-overlay {
+  position: fixed; inset: 0; z-index: 9100;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px; background: rgba(4,7,16,.72); backdrop-filter: blur(5px);
+}
+.validation-modal {
+  width: min(720px, 94vw); max-height: 88vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid #2e3a61; border-radius: 12px;
+  background: #161929; box-shadow: 0 24px 80px rgba(0,0,0,.58);
+}
+.validation-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 13px 16px; border-bottom: 1px solid #26304f; background: #1b2036;
+}
+.validation-header > div { display: flex; flex-direction: column; gap: 2px; }
+.validation-header strong { color: #e2e8f0; font-size: 14px; }
+.validation-header span { color: #52617c; font-size: 11px; }
+.validation-header button { width: 28px; height: 28px; border: 0; border-radius: 6px; background: transparent; color: #64748b; cursor: pointer; }
+.validation-header button:hover { background: rgba(248,113,113,.12); color: #f87171; }
+.validation-summary { display: flex; gap: 8px; padding: 10px 14px; border-bottom: 1px solid #26304f; }
+.validation-summary span { padding: 5px 9px; border-radius: 6px; background: #111421; font-size: 11px; }
+.validation-summary b { margin-left: 5px; font-size: 12px; }
+.validation-list { flex: 1; overflow-y: auto; padding: 10px; }
+.validation-item { width: 100%; margin-bottom: 7px; padding: 10px 12px; border: 1px solid #252f4d; border-radius: 8px; background: #111421; color: inherit; text-align: left; cursor: pointer; }
+.validation-item:hover { border-color: #4c6ef5; background: #151a2b; }
+.validation-item-title { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.validation-item-title > span { width: 9px; height: 9px; border-radius: 50%; }
+.validation-item-title strong { color: #cbd5e1; font-size: 12px; }
+.validation-item-title em { margin-left: auto; color: #475569; font-size: 10.5px; font-style: normal; }
+.validation-item p { margin: 4px 0; font-size: 11px; line-height: 1.45; }
+.validation-empty { padding: 45px; text-align: center; color: #34d399; }
+.is-error { color: #f87171 !important; }
+.is-warning { color: #fbbf24 !important; }
+.is-info { color: #60a5fa !important; }
