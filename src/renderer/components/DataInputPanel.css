@@ -140,6 +140,10 @@
   font-size: 10px;
 }
 
+.dip-coordinate-actions { display: flex; align-items: center; gap: 5px; }
+.dip-btn--swap { border-color: rgba(251,191,36,.3); color: #fbbf24; }
+.dip-btn--swap:hover:not(:disabled) { border-color: #fbbf24; background: rgba(251,191,36,.1); color: #fde68a; }
+
 .dip-btn,
 .dip-settings {
   border: 1px solid #293252;
@@ -280,6 +284,7 @@
   background: rgba(248, 113, 113, 0.07);
   color: #fca5a5;
 }
+.dip-message--axis { border-color: rgba(251,191,36,.24); background: rgba(251,191,36,.06); color: #fcd34d; }
 
 .dip-file-input { display: none; }
 
@@ -425,6 +430,10 @@
   font-size: 10.5px;
   line-height: 1.5;
 }
+
+.dip-raw-ocr { margin-top: 10px; border: 1px solid #25304e; border-radius: 6px; background: #0f1220; }
+.dip-raw-ocr summary { padding: 7px 9px; color: #64748b; font-size: 10.5px; cursor: pointer; }
+.dip-raw-ocr pre { max-height: 180px; margin: 0; padding: 8px 9px; overflow: auto; border-top: 1px solid #1e2540; color: #94a3b8; font: 10px/1.5 'JetBrains Mono',monospace; white-space: pre-wrap; word-break: break-word; }
 
 .dip-footer {
   display: flex;

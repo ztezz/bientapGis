@@ -160,7 +160,6 @@ export default function SettingsModal({ open, onClose, onSaved }) {
     if (!form.model?.trim()) errs.model = 'Không được để trống'
     if (form.timeout < 5000 || form.timeout > 300000) errs.timeout = 'Từ 5000ms đến 300000ms'
     if (form.temperature < 0 || form.temperature > 2) errs.temperature = 'Từ 0 đến 2'
-    if (form.imageScale < 1 || form.imageScale > 4) errs.imageScale = 'Từ 1.0 đến 4.0'
 
     if (Object.keys(errs).length > 0) {
       setErrors(errs)
@@ -533,31 +532,6 @@ export default function SettingsModal({ open, onClose, onSaved }) {
                   />
                 </div>
                 {errors.temperature && <p className="form-error">{errors.temperature}</p>}
-              </div>
-
-              <div className="form-row">
-                <label className="form-label">
-                  Image Scale
-                  <span className="form-hint">Phóng to ảnh trước khi gửi để tăng độ chính xác OCR</span>
-                </label>
-                <div className="slider-row">
-                  <input
-                    type="range"
-                    min="1" max="4" step="0.25"
-                    value={form.imageScale}
-                    onChange={e => set('imageScale', Number(e.target.value))}
-                    className="form-range"
-                  />
-                  <input
-                    type="number"
-                    className={`form-input form-input--sm form-input--num ${errors.imageScale ? 'form-input--error' : ''}`}
-                    value={form.imageScale}
-                    min="1" max="4" step="0.25"
-                    onChange={e => set('imageScale', Number(e.target.value))}
-                  />
-                  <span className="unit">×</span>
-                </div>
-                {errors.imageScale && <p className="form-error">{errors.imageScale}</p>}
               </div>
 
               <div className="form-row">

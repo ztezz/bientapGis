@@ -2,10 +2,10 @@
  * ocr.js - Module OCR dùng Vision API qua provider tuỳ chỉnh (OpenAI-compatible)
  *
  * Pipeline:
- *   1. Tiền xử lý ảnh (Canvas API): Grayscale → Binarization Otsu → Sharpen
+ *   1. Dùng nguyên ảnh người dùng chọn, không biến đổi pixel
  *   2. Đọc cấu hình động từ settingsStore (baseUrl, apiKey, model, ...)
  *   3. Gọi Vision endpoint với image_url base64 + system prompt VN-2000
- *   4. Regex parser trích xuất tọa độ từ text trả về
+ *   4. Parser trích xuất tọa độ từ text/JSON model trả về
  *
  * Mọi thông số (endpoint, model, API key, timeout...) được đọc real-time
  * từ settingsStore — người dùng thay đổi trong Settings Modal là có hiệu lực ngay.
@@ -30,127 +30,58 @@ Quy tắc bắt buộc:
 4. Giá trị X thường từ 500000 đến 2500000, Y từ 200000 đến 900000.
 5. Nếu không tìm thấy bảng tọa độ, trả về: KHONG_TIM_THAY
 6. Giữ nguyên số thập phân như trong ảnh (đừng làm tròn).
-7. Nếu ảnh mờ hoặc khó đọc, hãy cố gắng đọc hết khả năng.`
+7. Quét TOÀN BỘ ảnh từ trên xuống dưới, không dừng sau dòng đầu tiên.
+8. Trả về TẤT CẢ các hàng của bảng theo đúng thứ tự, tuyệt đối không chỉ trả một điểm mẫu.
+9. Nếu ảnh mờ hoặc khó đọc, hãy cố gắng đọc hết khả năng.`
 
-// ============================================================
-// TIỀN XỬ LÝ ẢNH (IMAGE PREPROCESSING)
-// ============================================================
-
-/**
- * Tiền xử lý ảnh để cải thiện chất lượng trước khi gửi Vision API
- * Quy trình: Scale up → Grayscale → Tăng tương phản → Otsu Binarization → Sharpen
- *
- * @param {string} imageSrc - Data URL hoặc URL ảnh gốc
- * @param {object} options
- * @returns {Promise<string>} Data URL ảnh đã xử lý (PNG, base64)
- */
-export async function preprocessImage(imageSrc, options = {}) {
-  const {
-    contrast = 1.6,   // Hệ số tương phản
-    scale = 2.0,      // Phóng to ảnh để tăng độ phân giải
-    sharpen = true    // Bộ lọc sharpen
-  } = options
-
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-
-    img.onload = () => {
-      const canvas = document.createElement('canvas')
-      const W = Math.round(img.width * scale)
-      const H = Math.round(img.height * scale)
-      canvas.width = W
-      canvas.height = H
-      const ctx = canvas.getContext('2d')
-
-      // Nền trắng
-      ctx.fillStyle = '#ffffff'
-      ctx.fillRect(0, 0, W, H)
-      ctx.drawImage(img, 0, 0, W, H)
-
-      let imageData = ctx.getImageData(0, 0, W, H)
-      const data = imageData.data
-
-      // 1. Grayscale (Luminance)
-      for (let i = 0; i < data.length; i += 4) {
-        const g = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]
-        data[i] = data[i + 1] = data[i + 2] = g
-      }
-
-      // 2. Tăng tương phản
-      for (let i = 0; i < data.length; i += 4) {
-        const v = Math.min(255, Math.max(0, contrast * (data[i] - 128) + 128))
-        data[i] = data[i + 1] = data[i + 2] = v
-      }
-
-      // 3. Otsu Binarization
-      const thresh = computeOtsuThreshold(data)
-      for (let i = 0; i < data.length; i += 4) {
-        const v = data[i] > thresh ? 255 : 0
-        data[i] = data[i + 1] = data[i + 2] = v
-      }
-
-      // 4. Sharpen
-      if (sharpen) {
-        imageData = applySharpen(ctx, imageData, W, H)
-      }
-
-      ctx.putImageData(imageData, 0, 0)
-      resolve(canvas.toDataURL('image/png'))
-    }
-
-    img.onerror = () => reject(new Error('Không thể tải ảnh để tiền xử lý'))
-    img.src = imageSrc
-  })
+function contentToText(content) {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  return content.map(part => {
+    if (typeof part === 'string') return part
+    return part?.text || part?.content || ''
+  }).join('')
 }
 
-/** Tính ngưỡng Otsu tối ưu */
-function computeOtsuThreshold(data) {
-  const hist = new Array(256).fill(0)
-  let total = 0
-  for (let i = 0; i < data.length; i += 4) { hist[Math.round(data[i])]++; total++ }
-
-  let sum = 0
-  for (let i = 0; i < 256; i++) sum += i * hist[i]
-
-  let sumB = 0, wB = 0, maxVar = 0, thresh = 128
-  for (let t = 0; t < 256; t++) {
-    wB += hist[t]
-    if (!wB) continue
-    const wF = total - wB
-    if (!wF) break
-    sumB += t * hist[t]
-    const mB = sumB / wB
-    const mF = (sum - sumB) / wF
-    const v = wB * wF * (mB - mF) ** 2
-    if (v > maxVar) { maxVar = v; thresh = t }
-  }
-  return thresh
+function extractCompletionText(payload) {
+  const choice = payload?.choices?.[0]
+  return contentToText(choice?.message?.content) ||
+    contentToText(choice?.delta?.content) ||
+    contentToText(payload?.output_text) ||
+    contentToText(payload?.text)
 }
 
-/** Bộ lọc Sharpen 3×3 */
-function applySharpen(ctx, imageData, W, H) {
-  const kernel = [0, -1, 0, -1, 5, -1, 0, -1, 0]
-  const src = imageData.data
-  const out = ctx.createImageData(W, H)
-  const dst = out.data
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      let v = 0
-      for (let ky = 0; ky < 3; ky++) {
-        for (let kx = 0; kx < 3; kx++) {
-          const py = Math.min(H - 1, Math.max(0, y + ky - 1))
-          const px = Math.min(W - 1, Math.max(0, x + kx - 1))
-          v += src[(py * W + px) * 4] * kernel[ky * 3 + kx]
-        }
-      }
-      const idx = (y * W + x) * 4
-      const clamped = Math.min(255, Math.max(0, v))
-      dst[idx] = dst[idx + 1] = dst[idx + 2] = clamped
-      dst[idx + 3] = 255
+/** Đọc cả JSON non-stream và SSE mà một số 9Router proxy luôn trả về. */
+export function parseCompletionResponse(rawText) {
+  const raw = String(rawText || '').trim()
+  if (!raw) return ''
+
+  try {
+    return extractCompletionText(JSON.parse(raw)).trim()
+  } catch {
+    // SSE không phải một JSON duy nhất; parse từng event data: {...}.
+  }
+
+  const deltaChunks = []
+  const snapshots = []
+  const dataLines = raw.split(/\r?\n/)
+    .filter(line => line.trimStart().startsWith('data:'))
+    .map(line => line.slice(line.indexOf('data:') + 5).trim())
+  for (const data of dataLines) {
+    if (!data || data === '[DONE]') continue
+    try {
+      const payload = JSON.parse(data)
+      const delta = contentToText(payload?.choices?.[0]?.delta?.content)
+      const snapshot = contentToText(payload?.choices?.[0]?.message?.content) ||
+        contentToText(payload?.output_text) || contentToText(payload?.text)
+      if (delta) deltaChunks.push(delta)
+      if (snapshot) snapshots.push(snapshot)
+    } catch {
+      // Bỏ qua heartbeat hoặc event metadata không phải JSON completion.
     }
   }
-  return out
+  if (deltaChunks.length) return deltaChunks.join('').trim()
+  return snapshots.sort((a, b) => b.length - a.length)[0]?.trim() || ''
 }
 
 // ============================================================
@@ -180,6 +111,7 @@ async function callVisionAPI(base64ImageUrl, model, cfg) {
 
   const body = {
     model,
+    stream: false,
     max_tokens: maxTokens,
     temperature,
     messages: [
@@ -214,8 +146,8 @@ async function callVisionAPI(base64ImageUrl, model, cfg) {
     throw new Error(`[${model}] HTTP ${res.status}: ${err}`)
   }
 
-  const json = await res.json()
-  const content = json?.choices?.[0]?.message?.content
+  const rawResponse = await res.text()
+  const content = parseCompletionResponse(rawResponse)
   if (!content) throw new Error(`[${model}] Không nhận được nội dung trả về`)
   return content.trim()
 }
@@ -271,6 +203,45 @@ function isValidVN2000Coord(n) {
   return !isNaN(n) && n >= 100000 && n <= 9999999.999
 }
 
+function parseCoordinateToken(value) {
+  const raw = String(value ?? '').trim().replace(/\s/g, '')
+  if (!raw) return NaN
+  const dot = raw.lastIndexOf('.')
+  const comma = raw.lastIndexOf(',')
+  let normalized = raw
+
+  if (dot >= 0 && comma >= 0) {
+    const decimalIndex = Math.max(dot, comma)
+    const integer = raw.slice(0, decimalIndex).replace(/[.,]/g, '')
+    const decimal = raw.slice(decimalIndex + 1).replace(/[.,]/g, '')
+    normalized = `${integer}.${decimal}`
+  } else if (comma >= 0) {
+    normalized = raw.replace(/,/g, '.')
+  }
+
+  let number = Number(normalized)
+  if (isValidVN2000Coord(number)) return number
+
+  // Fallback cho dạng phân cách hàng nghìn: 1.192.345 hoặc 601.234.
+  number = Number(raw.replace(/[.,]/g, ''))
+  return isValidVN2000Coord(number) ? number : NaN
+}
+
+function addCoordinate(results, seen, point, xValue, yValue) {
+  const x = parseCoordinateToken(xValue)
+  const y = parseCoordinateToken(yValue)
+  if (!isValidVN2000Coord(x) || !isValidVN2000Coord(y)) return false
+  const key = `${x.toFixed(3)}_${y.toFixed(3)}`
+  if (seen.has(key)) return false
+  seen.add(key)
+  results.push({
+    point: String(point || results.length + 1).replace(/^0+(?=\d)/, ''),
+    x: Number(x.toFixed(3)),
+    y: Number(y.toFixed(3)),
+  })
+  return true
+}
+
 /**
  * Parse text trả về từ Vision model → array tọa độ
  * Model đã được prompt trả về dạng: <điểm>|<X>|<Y>
@@ -284,82 +255,59 @@ export function parseCoordinatesFromOCR(rawText) {
 
   const results = []
   const seen = new Set()
-  const lines = rawText.split('\n')
+  const cleaned = String(rawText).replace(/```(?:json|text|csv)?/gi, '').replace(/```/g, '')
 
-  // Pattern A (ưu tiên): định dạng pipe đúng chuẩn prompt
-  // "1|1192345.12|601234.56" hoặc "1 | 1192345.12 | 601234.56"
-  const patternPipe = /^\s*(\w{1,4})\s*\|\s*(\d{5,8}(?:[.,]\d+)?)\s*\|\s*(\d{5,8}(?:[.,]\d+)?)\s*$/
+  // Ưu tiên JSON nếu model trả về array/object có point, x, y.
+  try {
+    const start = Math.min(...['[', '{'].map(char => {
+      const index = cleaned.indexOf(char)
+      return index < 0 ? Infinity : index
+    }))
+    if (Number.isFinite(start)) {
+      const parsed = JSON.parse(cleaned.slice(start))
+      const items = Array.isArray(parsed) ? parsed : parsed.coordinates || parsed.points || parsed.data
+      if (Array.isArray(items)) {
+        items.forEach((item, index) => addCoordinate(
+          results, seen,
+          item.point ?? item.diem ?? item.stt ?? index + 1,
+          item.x ?? item.X ?? item.northing,
+          item.y ?? item.Y ?? item.easting,
+        ))
+      }
+    }
+  } catch {
+    // Tiếp tục parser theo dòng nếu JSON có thêm prose hoặc không hợp lệ.
+  }
 
-  // Pattern B: STT + 2 số lớn phân cách bằng space/tab
-  // "1  1192345.12  601234.56"
-  const patternSpace = /^\s*(\w{1,4})\s+(\d{5,8}(?:[.,]\d+)?)\s+(\d{5,8}(?:[.,]\d+)?)\s*$/
-
-  // Pattern C: X=... Y=...
-  const patternXY = /[Xx]\s*[=:]\s*(\d{5,8}(?:[.,]\d+)?)[^\d]+[Yy]\s*[=:]\s*(\d{5,8}(?:[.,]\d+)?)/
-
-  // Pattern D: fallback — tìm bất kỳ 2 số lớn liên tiếp trong 1 dòng
-  const patternNumbers = /(\d{5,8}(?:[.,]\d{1,4})?)/g
+  const lines = cleaned.split(/\r?\n/)
+  const numberToken = /[-+]?\d{1,3}(?:\s\d{3})+(?:[.,]\d+)?|[-+]?\d{1,3}(?:[.,]\d{3}){2,}(?:[.,]\d+)?|[-+]?\d{1,3}[.,]\d{3}[.,]\d+|[-+]?\d{5,8}(?:[.,]\d+)?/g
+  const patternXY = /[Xx]\s*[=:]\s*([-+]?\d[\d.,\s]*\d).*?[Yy]\s*[=:]\s*([-+]?\d[\d.,\s]*\d)/
 
   // Skip header pattern
   const headerPattern = /^(stt|điểm|point|tên|x\s*[\(\[m]|y\s*[\(\[m]|toa\s*do|coordinate|bảng|table)/i
 
   for (const line of lines) {
-    const trimmed = line.trim()
+    const trimmed = line.trim().replace(/^\|/, '').replace(/\|$/, '')
     if (!trimmed || trimmed.length < 5) continue
+    if (/^[-|:\s]+$/.test(trimmed)) continue
     if (headerPattern.test(trimmed)) continue
 
-    // Thử Pattern A
-    let m = trimmed.match(patternPipe)
-    if (!m) m = trimmed.match(patternSpace)
-
-    if (m) {
-      const pt = m[1].replace(/^0+/, '') || m[1]
-      const x = parseFloat(m[2].replace(',', '.'))
-      const y = parseFloat(m[3].replace(',', '.'))
-      if (isValidVN2000Coord(x) && isValidVN2000Coord(y)) {
-        const key = `${x.toFixed(3)}_${y.toFixed(3)}`
-        if (!seen.has(key)) {
-          seen.add(key)
-          results.push({ point: pt, x: parseFloat(x.toFixed(3)), y: parseFloat(y.toFixed(3)) })
-        }
-        continue
-      }
-    }
-
-    // Thử Pattern C
+    // X=... Y=...
     const mc = trimmed.match(patternXY)
     if (mc) {
-      const x = parseFloat(mc[1].replace(',', '.'))
-      const y = parseFloat(mc[2].replace(',', '.'))
-      if (isValidVN2000Coord(x) && isValidVN2000Coord(y)) {
-        const key = `${x.toFixed(3)}_${y.toFixed(3)}`
-        if (!seen.has(key)) {
-          seen.add(key)
-          results.push({ point: String(results.length + 1), x: parseFloat(x.toFixed(3)), y: parseFloat(y.toFixed(3)) })
-        }
-        continue
-      }
+      if (addCoordinate(results, seen, results.length + 1, mc[1], mc[2])) continue
     }
 
-    // Pattern D: fallback
-    const nums = [...trimmed.matchAll(patternNumbers)]
-      .map(n => parseFloat(n[0].replace(',', '.')))
-      .filter(isValidVN2000Coord)
+    // Bảng pipe/Markdown: point | X | Y. Tách cột trước để không nhập nhằng dấu cách.
+    const columns = trimmed.split('|').map(value => value.trim()).filter(Boolean)
+    if (columns.length >= 3 && addCoordinate(results, seen, columns[0], columns[1], columns[2])) continue
 
-    if (nums.length >= 2) {
-      const x = nums[0], y = nums[1]
-      const key = `${x.toFixed(3)}_${y.toFixed(3)}`
-      if (!seen.has(key)) {
-        // Đoán nhãn điểm từ đầu dòng
-        const firstTok = trimmed.split(/[\s|]+/)[0]
-        const ptNum = parseInt(firstTok)
-        const pt = (!isNaN(ptNum) && ptNum >= 1 && ptNum < 1000)
-          ? String(ptNum)
-          : String(results.length + 1)
-
-        seen.add(key)
-        results.push({ point: pt, x: parseFloat(x.toFixed(3)), y: parseFloat(y.toFixed(3)) })
-      }
+    // Fallback: lọc tất cả token có thể là tọa độ trong dòng.
+    const tokens = [...trimmed.matchAll(numberToken)].map(match => match[0].trim())
+    const coordinates = tokens.filter(token => isValidVN2000Coord(parseCoordinateToken(token)))
+    if (coordinates.length >= 2) {
+      const first = trimmed.match(/^\s*([A-Za-z]?\d{1,4})\b/)?.[1]
+      addCoordinate(results, seen, first || results.length + 1, coordinates[0], coordinates[1])
     }
   }
 
@@ -383,24 +331,13 @@ export function parseCoordinatesFromOCR(rawText) {
 export async function extractCoordsFromImage(imageSrc, opts = {}) {
   const { onProgress = () => {}, onLog = () => {} } = opts
 
-  // Đọc config mới nhất (imageScale có thể khác mặc định)
-  const cfg = getAPIConfig()
-
   onProgress(5)
-  onLog('Đang tiền xử lý ảnh...')
-
-  // 1. Tiền xử lý ảnh — dùng imageScale từ settings
-  const processedImage = await preprocessImage(imageSrc, {
-    contrast:   1.6,
-    scale:      cfg.imageScale ?? 2.0,
-    sharpen:    true
-  })
+  onLog('Đang gửi nguyên ảnh gốc lên Vision AI...')
   onProgress(25)
-  onLog(`Ảnh đã xử lý (scale ×${cfg.imageScale}). Đang gửi Vision API...`)
 
-  // 2. Gọi Vision API với fallback tự động
+  // Gửi trực tiếp Data URL gốc; không grayscale, threshold, sharpen hoặc resize.
   const { text: rawText, modelUsed, cfg: usedCfg } = await callVisionWithFallback(
-    processedImage,
+    imageSrc,
     { onProgress, onLog }
   )
   onProgress(80)
@@ -411,7 +348,7 @@ export async function extractCoordsFromImage(imageSrc, opts = {}) {
   onProgress(100)
   onLog(`Trích xuất được ${coords.length} điểm tọa độ.`)
 
-  return { coords, rawText, processedImage, modelUsed, cfg: usedCfg }
+  return { coords, rawText, processedImage: imageSrc, modelUsed, cfg: usedCfg }
 }
 
 /**

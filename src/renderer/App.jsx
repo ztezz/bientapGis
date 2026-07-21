@@ -337,13 +337,11 @@ export default function App() {
             onViewportChange={setViewportInfo}
           />
           <MapNavigator
-            layers={layers}
             viewport={viewportInfo}
             onZoomIn={() => canvasRef.current?.zoomIn()}
             onZoomOut={() => canvasRef.current?.zoomOut()}
             onResetZoom={() => canvasRef.current?.resetZoom()}
             onFit={() => canvasRef.current?.fitToView()}
-            onCenterWorld={(x, y) => canvasRef.current?.centerOnWorldPoint(x, y)}
           />
           <BasemapControl
             enabled={basemapEnabled}

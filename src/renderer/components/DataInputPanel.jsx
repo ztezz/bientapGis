@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react'
 import { extractCoordsFromImage } from '@modules/ocr'
+import ParcelPreview from '@components/ParcelPreview'
 import './DataInputPanel.css'
 
 const EMPTY_ROWS = [
@@ -33,6 +34,8 @@ export default function DataInputPanel({
   const [logs, setLogs] = useState([])
   const [model, setModel] = useState('')
   const [ocrError, setOcrError] = useState('')
+  const [rawOcr, setRawOcr] = useState('')
+  const [axisMessage, setAxisMessage] = useState('')
   const [isScanning, setIsScanning] = useState(false)
   const fileInputRef = useRef(null)
 
@@ -58,6 +61,12 @@ export default function DataInputPanel({
   const removeRow = (index) => {
     setRows(current => current.filter((_, rowIndex) => rowIndex !== index))
     setErrors({})
+  }
+
+  const swapAxes = () => {
+    setRows(current => current.map(row => ({ ...row, x: row.y, y: row.x })))
+    setErrors({})
+    setAxisMessage('Đã hoán đổi toàn bộ cột X và Y. Bấm lại để hoàn nguyên.')
   }
 
   const validateRows = () => {
@@ -101,6 +110,8 @@ export default function DataInputPanel({
     setLogs([])
     setModel('')
     setOcrError('')
+    setRawOcr('')
+    setAxisMessage('')
   }
 
   const handleChooseImage = async () => {
@@ -136,6 +147,8 @@ export default function DataInputPanel({
     setLogs([])
     setModel('')
     setOcrError('')
+    setRawOcr('')
+    setAxisMessage('')
 
     try {
       const result = await extractCoordsFromImage(image.base64, {
@@ -144,6 +157,7 @@ export default function DataInputPanel({
       })
 
       setModel(result.modelUsed || '')
+      setRawOcr(result.rawText || '')
       if (!result.coords?.length) {
         setOcrError('Không tìm thấy tọa độ trong ảnh. Hãy thử ảnh rõ hơn hoặc kiểm tra cấu hình OCR.')
         return
@@ -155,7 +169,11 @@ export default function DataInputPanel({
         y: String(coord.y),
       })))
       setErrors({})
-      setActiveTab('manual')
+      if (result.coords.length >= 3) {
+        setActiveTab('manual')
+      } else {
+        setOcrError(`AI trả về ${result.coords.length} điểm. Cần ít nhất 3 điểm; hãy xem kết quả thô bên dưới.`)
+      }
     } catch (error) {
       setOcrError(error.message || 'Quét OCR thất bại.')
       setLogs(current => [...current, `Lỗi: ${error.message || 'Không xác định'}`])
@@ -209,9 +227,14 @@ export default function DataInputPanel({
                 <h3>Tọa độ VN-2000</h3>
                 <span>{rows.length} điểm</span>
               </div>
-              <button type="button" className="dip-btn dip-btn--small" onClick={addRow}>
-                + Thêm dòng
-              </button>
+              <div className="dip-coordinate-actions">
+                <button type="button" className="dip-btn dip-btn--small dip-btn--swap" onClick={swapAxes} title="Hoán đổi X và Y của tất cả điểm">
+                  ⇄ Đảo X/Y
+                </button>
+                <button type="button" className="dip-btn dip-btn--small" onClick={addRow}>
+                  + Thêm dòng
+                </button>
+              </div>
             </div>
 
             <div className="dip-table-wrap">
@@ -271,7 +294,10 @@ export default function DataInputPanel({
               </table>
             </div>
 
+            <ParcelPreview rows={rows} />
+
             {errors.form && <p className="dip-message dip-message--error">{errors.form}</p>}
+            {axisMessage && <p className="dip-message dip-message--axis">{axisMessage}</p>}
             {!activeLayer && <p className="dip-message">Chọn một lớp active trước khi tạo vùng.</p>}
             {activeLayer?.locked && <p className="dip-message dip-message--error">Lớp active đang bị khóa.</p>}
           </div>
@@ -321,6 +347,13 @@ export default function DataInputPanel({
             )}
 
             {ocrError && <p className="dip-message dip-message--error">{ocrError}</p>}
+
+            {rawOcr && (
+              <details className="dip-raw-ocr" open={Boolean(ocrError)}>
+                <summary>Kết quả thô từ AI</summary>
+                <pre>{rawOcr}</pre>
+              </details>
+            )}
 
             {logs.length > 0 && (
               <div className="dip-log" aria-live="polite">
