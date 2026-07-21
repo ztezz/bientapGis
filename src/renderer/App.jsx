@@ -15,6 +15,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import CanvasEditor          from '@components/CanvasEditor'
+import DataInputPanel        from '@components/DataInputPanel'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -122,8 +123,20 @@ export default function App() {
   }, [updateParcelAttributes])
 
   // Multi-select: nhận danh sách { layerId, parcelId }[] từ canvas
-  const handleMultiSelect = useCallback((results) => {
-    setMultiSelected(results)
+  const handleMultiSelect = useCallback((results, options = {}) => {
+    setMultiSelected(current => {
+      if (!options.additive) return results
+      const merged = [...current]
+      const keys = new Set(current.map(item => `${item.layerId}:${item.parcelId}`))
+      results.forEach(item => {
+        const key = `${item.layerId}:${item.parcelId}`
+        if (!keys.has(key)) {
+          keys.add(key)
+          merged.push(item)
+        }
+      })
+      return merged
+    })
     clearSelection()   // bỏ single-select khi đang box-select
   }, [clearSelection])
 
@@ -176,6 +189,7 @@ export default function App() {
   // Lấy thông tin vùng + lớp đang chọn
   const selectedParcel = selected ? getSelectedParcel() : null
   const selectedLayer  = selected ? layers.find(l => l.id === selected.layerId) : null
+  const activeLayer    = layers.find(l => l.id === activeLayerId) || null
 
   // ── Render ──────────────────────────────────────────────
   return (
@@ -239,6 +253,22 @@ export default function App() {
 
       {/* ══ MAIN LAYOUT ══ */}
       <div className="main-layout">
+
+        {/* ── Input / OCR panel ───────────────────────────── */}
+        <aside className="left-panel">
+          <DataInputPanel
+            activeLayer={activeLayer}
+            onCreateParcel={(coordinates) => {
+              if (!activeLayerId) return
+              const parcelId = addParcel(activeLayerId, coordinates)
+              if (parcelId) {
+                selectParcel(activeLayerId, parcelId)
+                setTool('pick')
+              }
+            }}
+            onOpenSettings={() => setShowSettings(true)}
+          />
+        </aside>
 
         {/* ── Canvas ─────────────────────────────────────── */}
         <div className="canvas-area">

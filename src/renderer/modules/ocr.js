@@ -15,7 +15,6 @@ import { getAPIConfig, buildModelQueue } from '@modules/settingsStore'
 
 // Giá trị mặc định chỉ dùng khi settingsStore chưa khởi tạo
 const FALLBACK_BASE_URL = 'http://localhost:20128/v1'
-const FALLBACK_MODELS   = ['claude-opus-4-5', 'gpt-4o', 'gemini-2.0-flash']
 
 /** System prompt tối ưu cho việc đọc bảng tọa độ VN-2000 từ Giấy CNQSD đất */
 const OCR_SYSTEM_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu từ ảnh Giấy chứng nhận quyền sử dụng đất Việt Nam.
@@ -157,20 +156,6 @@ function applySharpen(ctx, imageData, W, H) {
 // ============================================================
 // 9ROUTER VISION API CALL
 // ============================================================
-
-/**
- * Lấy danh sách model sẽ thử theo thứ tự ưu tiên.
- * Cho phép override từ settings UI (truyền vào preferredModel).
- */
-function buildModelQueue(preferredModel) {
-  if (preferredModel && !VISION_MODELS.includes(preferredModel)) {
-    return [preferredModel, ...VISION_MODELS]
-  }
-  if (preferredModel) {
-    return [preferredModel, ...VISION_MODELS.filter(m => m !== preferredModel)]
-  }
-  return [...VISION_MODELS]
-}
 
 /**
  * Gọi Vision API với một model cụ thể — đọc config từ settingsStore

@@ -45,30 +45,41 @@ const SNAP_PX   = 12   // snap to first point (px) khi kết thúc vẽ
 // HELPERS
 // ============================================================
 
-/** Chuyển mảng coords VN-2000 → tọa độ màn hình, trả về transform params */
-function coordsToScreen(coords, W, H, padding = 60) {
-  if (!coords?.length) return { pts: [], scale: 1, minX: 0, minY: 0, maxX: 0, maxY: 0 }
-  const xs = coords.map(c => c.x), ys = coords.map(c => c.y)
-  const minX = Math.min(...xs), maxX = Math.max(...xs)
-  const minY = Math.min(...ys), maxY = Math.max(...ys)
-  const rangeX = maxX - minX || 1, rangeY = maxY - minY || 1
-  const avW = W - padding * 2, avH = H - padding * 2
-  const scale = Math.min(avW / rangeX, avH / rangeY)
-  const ox = padding + (avW - rangeX * scale) / 2
-  const oy = padding + (avH - rangeY * scale) / 2
-  const pts = coords.map(c => ({
-    x: ox + (c.x - minX) * scale,
-    y: oy + (maxY - c.y) * scale
-  }))
-  return { pts, scale, minX, minY, maxX, maxY, ox, oy }
+/** Tạo affine transform chung VN-2000 → Fabric scene cho toàn bộ project. */
+function createWorldTransform(bbox, W, H, padding = 60) {
+  const availableW = Math.max(1, W - padding * 2)
+  const availableH = Math.max(1, H - padding * 2)
+  const rangeX = bbox.maxX - bbox.minX
+  const rangeY = bbox.maxY - bbox.minY
+  const scaleX = rangeX > 0 ? availableW / rangeX : Infinity
+  const scaleY = rangeY > 0 ? availableH / rangeY : Infinity
+  let scale = Math.min(scaleX, scaleY)
+  if (!Number.isFinite(scale) || scale <= 0) scale = 1
+
+  const sceneW = rangeX * scale
+  const sceneH = rangeY * scale
+  const left = padding + (availableW - sceneW) / 2
+  const top = padding + (availableH - sceneH) / 2
+
+  return {
+    scale,
+    tx: left - bbox.minX * scale,
+    ty: top + bbox.maxY * scale,
+  }
 }
 
-/** Ngược lại: tọa độ màn hình canvas → VN-2000 (cần transform params) */
-function screenToCoord(sx, sy, transform) {
-  const { scale, minX, maxX, minY, maxY, ox, oy } = transform
-  const x = minX + (sx - ox) / scale
-  const y = maxY - (sy - oy) / scale
-  return { x, y }
+function worldToCanvas(coord, transform) {
+  return {
+    x: transform.tx + coord.x * transform.scale,
+    y: transform.ty - coord.y * transform.scale,
+  }
+}
+
+function canvasToWorld(point, transform) {
+  return {
+    x: (point.x - transform.tx) / transform.scale,
+    y: (transform.ty - point.y) / transform.scale,
+  }
 }
 
 /** Tính bounding box tất cả coords trong tất cả lớp */
@@ -106,6 +117,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   const wrapperEl  = useRef(null)   // div wrapper — để đo kích thước thực
   const canvasEl   = useRef(null)   // <canvas> element — truyền vào fabric
   const fc         = useRef(null)   // fabric.Canvas
+  const toolEvents = useRef({ down: null, dbl: null, move: null, up: null })
   const isPanning  = useRef(false)
   const lastPan    = useRef({ x: 0, y: 0 })
 
@@ -141,6 +153,13 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       enableRetinaScaling: true,
     })
     fc.current = canvas
+
+    // Đặt kích thước thật trước khi tạo world transform ở effect render dữ liệu.
+    const initialWrapper = wrapperEl.current
+    if (initialWrapper?.clientWidth > 0 && initialWrapper?.clientHeight > 0) {
+      canvas.setWidth(initialWrapper.clientWidth)
+      canvas.setHeight(initialWrapper.clientHeight)
+    }
     drawGrid(canvas)
 
     // Zoom
@@ -152,7 +171,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       opt.e.stopPropagation()
     })
 
-    // Pan (middle-click or Alt+drag)
+    // Pan nhanh luôn khả dụng bằng chuột giữa hoặc Alt+drag.
     canvas.on('mouse:down', opt => {
       if (opt.e.button === 1 || opt.e.altKey) {
         isPanning.current = true
@@ -209,7 +228,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   useEffect(() => {
     if (!fc.current) return
     renderAllLayers(layers, selectedParcelId)
-  }, [layers, selectedParcelId])
+  }, [layers, selectedParcelId, multiSelectedIds, tool])
 
   // ── Cập nhật cursor/handler khi tool đổi ────────────────
 
@@ -226,11 +245,13 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     // Hủy box select nếu đổi tool
     if (tool !== 'boxselect') cancelBoxSelect()
 
-    // Detach tất cả event handler cũ
-    canvas.off('mouse:down:before')
-    canvas.off('mouse:dblclick')
-    canvas.off('mouse:move')
-    canvas.off('mouse:up')    // boxselect dùng mouse:up
+    // Chỉ gỡ handler của tool cũ, không làm mất handler pan dùng chung.
+    const old = toolEvents.current
+    if (old.down) canvas.off('mouse:down:before', old.down)
+    if (old.dbl) canvas.off('mouse:dblclick', old.dbl)
+    if (old.move) canvas.off('mouse:move', old.move)
+    if (old.up) canvas.off('mouse:up', old.up)
+    toolEvents.current = { down: null, dbl: null, move: null, up: null }
 
     const cursorMap = {
       select:    'default',
@@ -241,26 +262,55 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       boxselect: 'crosshair',
     }
     canvas.setCursor(cursorMap[tool] || 'default')
+    canvas.skipTargetFind = tool === 'pan' || tool === 'draw' || tool === 'measure' || tool === 'boxselect'
+    canvas.selection = false
 
     if (tool === 'draw') {
       setStatus('Click để thêm điểm | Double-click hoặc click điểm đầu để đóng vùng | Esc hủy')
       canvas.on('mouse:down:before', handleDrawClick)
       canvas.on('mouse:dblclick',    handleDrawDblClick)
       canvas.on('mouse:move',        handleDrawMouseMove)
+      toolEvents.current = { down: handleDrawClick, dbl: handleDrawDblClick, move: handleDrawMouseMove, up: null }
     } else if (tool === 'measure') {
       setStatus('Click 2 điểm để đo khoảng cách | Esc hủy')
       canvas.on('mouse:down:before', handleMeasureClick)
+      toolEvents.current.down = handleMeasureClick
     } else if (tool === 'boxselect') {
       setStatus('Kéo để quét chọn nhiều vùng | Giữ Shift để cộng thêm vào vùng đã chọn | Esc hủy')
       canvas.on('mouse:down:before', handleBoxSelectStart)
       canvas.on('mouse:move',        handleBoxSelectMove)
       canvas.on('mouse:up',          handleBoxSelectEnd)
+      toolEvents.current = { down: handleBoxSelectStart, dbl: null, move: handleBoxSelectMove, up: handleBoxSelectEnd }
     } else if (tool === 'pick') {
       setStatus('Click vào vùng để chọn | [B] Quét chọn nhiều vùng')
     } else if (tool === 'select') {
       setStatus('Kéo đỉnh để điều chỉnh vị trí')
     } else if (tool === 'pan') {
       setStatus('Kéo để di chuyển bản đồ | Scroll để zoom')
+      const startPan = opt => {
+        if (opt.e.button !== 0) return
+        isPanning.current = true
+        lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
+        canvas.setCursor('grabbing')
+        opt.e.preventDefault()
+      }
+      const movePan = opt => {
+        if (!isPanning.current) return
+        canvas.relativePan(new fabric.Point(
+          opt.e.clientX - lastPan.current.x,
+          opt.e.clientY - lastPan.current.y
+        ))
+        lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
+        opt.e.preventDefault()
+      }
+      const endPan = () => {
+        isPanning.current = false
+        canvas.setCursor('grab')
+      }
+      canvas.on('mouse:down:before', startPan)
+      canvas.on('mouse:move', movePan)
+      canvas.on('mouse:up', endPan)
+      toolEvents.current = { down: startPan, dbl: null, move: movePan, up: endPan }
     }
 
     // Bật/tắt draggable cho vertex
@@ -296,20 +346,20 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   useImperativeHandle(ref, () => ({
     fitToView() {
       const canvas = fc.current
-      if (!canvas) return
+      const tr = transformRef.current
+      if (!canvas || !tr) return
       const bbox = globalBBox(layers)
       if (!bbox) return
       const W = canvas.width, H = canvas.height
-      const rangeX = bbox.maxX - bbox.minX || 100
-      const rangeY = bbox.maxY - bbox.minY || 100
-      const zoom = Math.min(W / (rangeX * 1.3), H / (rangeY * 1.3), 50)
-      const { pts } = coordsToScreen(
-        [{ x: bbox.minX, y: bbox.minY }, { x: bbox.maxX, y: bbox.maxY }], W, H, 80
-      )
-      const cx = (pts[0].x + pts[1].x) / 2
-      const cy = (pts[0].y + pts[1].y) / 2
-      canvas.setZoom(zoom)
+      const topLeft = worldToCanvas({ x: bbox.minX, y: bbox.maxY }, tr)
+      const bottomRight = worldToCanvas({ x: bbox.maxX, y: bbox.minY }, tr)
+      const sceneW = Math.max(1, Math.abs(bottomRight.x - topLeft.x))
+      const sceneH = Math.max(1, Math.abs(bottomRight.y - topLeft.y))
+      const zoom = Math.min(Math.max(Math.min((W - 120) / sceneW, (H - 120) / sceneH), 0.05), 80)
+      const cx = (topLeft.x + bottomRight.x) / 2
+      const cy = (topLeft.y + bottomRight.y) / 2
       canvas.setViewportTransform([zoom, 0, 0, zoom, W / 2 - cx * zoom, H / 2 - cy * zoom])
+      canvas.requestRenderAll()
     },
     resetZoom() {
       fc.current?.setViewportTransform([1, 0, 0, 1, 0, 0])
@@ -332,13 +382,12 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     toRemove.forEach(o => canvas.remove(o))
     registry.current.clear()
 
-    // Tính global transform (fit all parcels)
-    const allCoords = []
-    layerList.forEach(l => l.parcels.forEach(p => allCoords.push(...p.coordinates)))
-    if (allCoords.length >= 2) {
-      const W = canvas.width, H = canvas.height
-      const tr = coordsToScreen(allCoords, W, H, 60)
-      transformRef.current = tr
+    // Transform chung được tạo một lần để mọi thửa giữ đúng tương quan không gian.
+    if (!transformRef.current) {
+      const bbox = globalBBox(layerList)
+      if (bbox) {
+        transformRef.current = createWorldTransform(bbox, canvas.width, canvas.height, 60)
+      }
     }
 
     // Render theo thứ tự order (thấp → cao)
@@ -357,13 +406,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   }
 
   function renderParcel(canvas, layer, parcel, isSelected, isMultiSelected = false) {
-    const W = canvas.width, H = canvas.height
-    const { pts, scale, minX, minY, maxX, maxY, ox, oy } =
-      coordsToScreen(parcel.coordinates, W, H, 60)
+    const tr = transformRef.current
+    if (!tr) return
+    const pts = parcel.coordinates.map(coord => worldToCanvas(coord, tr))
     if (!pts.length) return
-
-    // Lưu transform để dùng cho drag vertex
-    const localTransform = { scale, minX, minY, maxX, maxY, ox, oy }
 
     const strokeColor = isSelected     ? '#ffffff'
                        : isMultiSelected ? '#FFD700'
@@ -464,8 +510,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
           fill: '#FF9800',
           stroke: '#fff',
           strokeWidth: 1.5,
-          left: sp.x - VERTEX_R,
-          top:  sp.y - VERTEX_R,
+          left: sp.x,
+          top:  sp.y,
+          originX: 'center',
+          originY: 'center',
           selectable: true,
           evented: true,
           hasControls: false,
@@ -482,29 +530,26 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
         // Moving → cập nhật polygon live
         vert.on('moving', () => {
-          const cx = vert.left + VERTEX_R
-          const cy = vert.top  + VERTEX_R
-          const dx = (cx - sp.x) / localTransform.scale
-          const dy = -(cy - sp.y) / localTransform.scale
+          const center = vert.getCenterPoint()
+          const moved = canvasToWorld(center, transformRef.current)
           const newCoords = parcel.coordinates.map((c, ci) =>
-            ci === i ? { ...c, x: c.x + dx, y: c.y + dy } : c
+            ci === i ? { ...c, x: moved.x, y: moved.y } : c
           )
           // Cập nhật polygon shape live
           const polyObj = canvas.getObjects().find(o => o.__id === polyId)
           if (polyObj) {
-            const { pts: np } = coordsToScreen(newCoords, W, H, 60)
+            const np = newCoords.map(coord => worldToCanvas(coord, transformRef.current))
             polyObj.set({ points: np.map(p => ({ x: p.x, y: p.y })) })
+            polyObj.setCoords()
           }
         })
 
         // Moved → commit
         vert.on('moved', () => {
-          const cx = vert.left + VERTEX_R
-          const cy = vert.top  + VERTEX_R
-          const dx = (cx - sp.x) / localTransform.scale
-          const dy = -(cy - sp.y) / localTransform.scale
+          const center = vert.getCenterPoint()
+          const moved = canvasToWorld(center, transformRef.current)
           const newCoords = parcel.coordinates.map((c, ci) =>
-            ci === i ? { ...c, x: c.x + dx, y: c.y + dy } : c
+            ci === i ? { ...c, x: moved.x, y: moved.y } : c
           )
           onVertexMoved?.(layer.id, parcel.id, newCoords)
         })
@@ -542,7 +587,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     if (state.pts.length >= 3) {
       const first = state.pts[0]
       const dx = newPt.x - first.x, dy = newPt.y - first.y
-      if (Math.sqrt(dx * dx + dy * dy) < SNAP_PX) {
+      if (Math.sqrt(dx * dx + dy * dy) < SNAP_PX / (canvas.getZoom() || 1)) {
         finishDraw()
         return
       }
@@ -618,24 +663,17 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       cancelDraw(); return
     }
 
-    // Chuyển tọa độ màn hình → VN-2000
-    // Dùng transformRef nếu đã có, ngược lại dùng simple mapping
+    // Chuyển Fabric scene → VN-2000 bằng transform chung của project.
     const tr = transformRef.current
-    let coordsList
-
-    if (tr) {
-      coordsList = state.pts.map((sp, i) => {
-        const vn = screenToCoord(sp.x, sp.y, tr)
-        return { point: String(i + 1), x: vn.x, y: vn.y }
-      })
-    } else {
-      // Không có transform → dùng tọa độ canvas làm VN-2000 tạm thời
-      coordsList = state.pts.map((sp, i) => ({
-        point: String(i + 1),
-        x: parseFloat(sp.x.toFixed(3)),
-        y: parseFloat(sp.y.toFixed(3))
-      }))
+    if (!tr) {
+      setStatus('Cần nhập ít nhất một thửa VN-2000 trước khi vẽ trực tiếp trên canvas')
+      cancelDraw()
+      return
     }
+    const coordsList = state.pts.map((sp, i) => {
+      const vn = canvasToWorld(sp, tr)
+      return { point: String(i + 1), x: vn.x, y: vn.y }
+    })
 
     const layerId = state.layerId || activeLayerId
     onParcelDrawn?.(layerId, coordsList)
@@ -713,8 +751,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const tr = transformRef.current
       let distTxt = ''
       if (tr) {
-        const c1 = screenToCoord(p1.x, p1.y, tr)
-        const c2 = screenToCoord(p2.x, p2.y, tr)
+        const c1 = canvasToWorld(p1, tr)
+        const c2 = canvasToWorld(p2, tr)
         const d  = distanceBetween(c1, c2)
         distTxt = `${d.toFixed(3)} m`
       } else {
@@ -759,16 +797,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
    * Khác getPointer() ở chỗ không bị ảnh hưởng bởi object dưới cursor
    */
   function getViewportPoint(opt) {
-    const canvas = fc.current
-    const vpt = canvas.viewportTransform  // [scaleX, 0, 0, scaleY, tx, ty]
-    const e   = opt.e
-    const rect = canvas.upperCanvasEl.getBoundingClientRect()
-    const mx = (e.clientX - rect.left)
-    const my = (e.clientY - rect.top)
-    // Inverse viewport transform → canvas coords
-    const x = (mx - vpt[4]) / vpt[0]
-    const y = (my - vpt[5]) / vpt[3]
-    return { x, y }
+    return fc.current.getPointer(opt.e)
   }
 
   function handleBoxSelectStart(opt) {
@@ -829,7 +858,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     const rx2 = Math.max(pt.x, state.startX)
     const ry2 = Math.max(pt.y, state.startY)
 
-    const minDrag = 4  // px tối thiểu để tính là kéo (không phải click nhầm)
+    const minDrag = 4 / (canvas.getZoom() || 1)
     if ((rx2 - rx1) < minDrag && (ry2 - ry1) < minDrag) {
       cancelBoxSelect()
       return
@@ -848,8 +877,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       })
     })
 
-    // Shift → cộng thêm vào selection hiện tại (App sẽ tự merge)
-    onMultiSelect?.(hits)
+    onMultiSelect?.(hits, { additive: Boolean(opt.e.shiftKey) })
 
     if (hits.length > 0) {
       setStatus(`Đã chọn ${hits.length} vùng | Shift+kéo để thêm vào vùng chọn | Esc bỏ chọn`)
@@ -868,11 +896,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
    */
   function parcelIntersectsRect(parcel, rx1, ry1, rx2, ry2) {
     const tr = transformRef.current
-    if (!parcel.coordinates?.length) return false
-
-    const W = fc.current?.width  || 800
-    const H = fc.current?.height || 600
-    const { pts } = coordsToScreen(parcel.coordinates, W, H, 60)
+    if (!tr || !parcel.coordinates?.length) return false
+    const pts = parcel.coordinates.map(coord => worldToCanvas(coord, tr))
     if (!pts.length) return false
 
     // 1. Kiểm tra centroid nằm trong rect

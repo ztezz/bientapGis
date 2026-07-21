@@ -198,9 +198,22 @@ html, body, #root {
   min-width: 0;
 }
 
+/* ── Left input / OCR panel ── */
+.left-panel {
+  width: 310px;
+  min-width: 270px;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--bg-dark);
+  flex-shrink: 0;
+}
+
 /* ── Right panel ── */
 .right-panel {
-  width: 280px;
+  width: 300px;
   min-width: 240px;
   max-width: 320px;
   display: flex;
@@ -209,6 +222,12 @@ html, body, #root {
   background: var(--bg-dark);
   overflow: hidden;
   flex-shrink: 0;
+}
+
+@media (max-width: 1250px) {
+  .left-panel { width: 270px; min-width: 250px; }
+  .right-panel { width: 270px; min-width: 250px; }
+  .toolbar-btn-label { display: none; }
 }
 
 /* Right tabs */
