@@ -1,0 +1,292 @@
+/* MultiSelectPanel.css */
+
+.msp-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #161929;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ── Empty state ── */
+.msp-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 20px;
+  text-align: center;
+  color: #334155;
+}
+.msp-empty-icon {
+  font-size: 44px;
+  margin-bottom: 14px;
+  opacity: 0.25;
+}
+.msp-empty-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: #475569;
+  margin: 0 0 8px;
+}
+.msp-empty-hint {
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.7;
+  margin: 0;
+}
+.msp-empty-hint strong {
+  color: #64748b;
+  font-weight: 700;
+}
+
+/* ── Header ── */
+.msp-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid #1e2540;
+  background: #1a1f35;
+  flex-shrink: 0;
+}
+
+.msp-header-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.msp-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FFD700;
+}
+
+.msp-total-area {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #64748b;
+}
+
+.msp-clear-btn {
+  padding: 5px 10px;
+  background: transparent;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.msp-clear-btn:hover {
+  border-color: #f87171;
+  color: #f87171;
+  background: rgba(239,68,68,0.06);
+}
+
+/* ── Batch actions ── */
+.msp-actions {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #1e2540;
+  flex-shrink: 0;
+  background: #161929;
+}
+
+.msp-action-btn {
+  flex: 1;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.msp-action-btn--export {
+  background: rgba(76, 110, 245, 0.15);
+  border-color: rgba(76, 110, 245, 0.4);
+  color: #93c5fd;
+}
+.msp-action-btn--export:hover {
+  background: rgba(76, 110, 245, 0.28);
+  border-color: #4c6ef5;
+}
+
+.msp-action-btn--danger {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+.msp-action-btn--danger:hover {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: #f87171;
+}
+
+/* ── Layer summary ── */
+.msp-summary {
+  padding: 8px 12px;
+  border-bottom: 1px solid #1e2540;
+  background: #111421;
+  flex-shrink: 0;
+}
+
+.msp-summary-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #3d5273;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin: 0 0 6px;
+}
+
+.msp-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+}
+
+.msp-summary-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.msp-summary-name {
+  flex: 1;
+  font-size: 11.5px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msp-summary-count {
+  font-size: 11px;
+  color: #475569;
+}
+
+.msp-summary-area {
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #FFD700;
+  opacity: 0.75;
+}
+
+/* ── Item list ── */
+.msp-list {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3358 transparent;
+}
+.msp-list::-webkit-scrollbar { width: 4px; }
+.msp-list::-webkit-scrollbar-thumb { background: #2a3358; border-radius: 2px; }
+
+.msp-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #111421;
+  cursor: pointer;
+  transition: background 0.1s;
+  position: relative;
+}
+.msp-item:hover {
+  background: rgba(255, 215, 0, 0.04);
+}
+.msp-item:hover .msp-item-remove {
+  opacity: 1;
+}
+
+.msp-item-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1.5px solid rgba(255,255,255,0.15);
+}
+
+.msp-item-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.msp-item-label {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #cbd5e1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msp-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.msp-item-layer {
+  font-size: 10.5px;
+  color: #3d5273;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 80px;
+}
+
+.msp-item-type {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.1);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.msp-item-area {
+  font-size: 10.5px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #475569;
+  margin-left: auto;
+}
+
+.msp-item-remove {
+  width: 22px;
+  height: 22px;
+  background: transparent;
+  border: none;
+  color: #334155;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.msp-item-remove:hover {
+  background: rgba(239,68,68,0.15);
+  color: #f87171;
+}

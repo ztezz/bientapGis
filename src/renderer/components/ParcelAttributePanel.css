@@ -1,0 +1,366 @@
+/* ParcelAttributePanel.css */
+
+.pap-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #161929;
+  font-size: 13px;
+  overflow: hidden;
+}
+
+/* ── Empty state ── */
+.pap-empty {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 20px;
+  text-align: center;
+  color: #334155;
+}
+.pap-empty-icon {
+  font-size: 40px;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+.pap-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #475569;
+  margin: 0 0 8px;
+}
+.pap-empty-hint {
+  font-size: 12px;
+  color: #334155;
+  line-height: 1.6;
+  margin: 0;
+}
+.pap-empty-hint strong {
+  color: #475569;
+}
+
+/* ── Header ── */
+.pap-header {
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid #1e2540;
+  background: #1a1f35;
+  flex-shrink: 0;
+}
+
+.pap-header-top {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.pap-icon {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.pap-header-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow: hidden;
+}
+
+.pap-layer-name {
+  font-size: 10.5px;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  font-weight: 600;
+}
+
+.pap-parcel-id {
+  font-size: 13px;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pap-deselect-btn {
+  width: 24px;
+  height: 24px;
+  background: transparent;
+  border: none;
+  color: #475569;
+  cursor: pointer;
+  border-radius: 5px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.pap-deselect-btn:hover { background: rgba(239,68,68,0.15); color: #f87171; }
+
+/* ── Stats ── */
+.pap-stats {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  background: #111421;
+  border-radius: 8px;
+  padding: 8px 0;
+  margin-bottom: 8px;
+}
+
+.pap-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.pap-stat-val {
+  font-size: 13px;
+  font-weight: 700;
+  color: #93c5fd;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.pap-stat-lbl {
+  font-size: 10px;
+  color: #3d5273;
+}
+
+.pap-stat-sep {
+  width: 1px;
+  height: 28px;
+  background: #1e2540;
+}
+
+/* ── Land type badge ── */
+.pap-land-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(251, 191, 36, 0.08);
+  border: 1px solid rgba(251, 191, 36, 0.2);
+  border-radius: 6px;
+  padding: 5px 10px;
+}
+
+.pap-land-code {
+  font-size: 12px;
+  font-weight: 800;
+  color: #fbbf24;
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+}
+
+.pap-land-desc {
+  font-size: 11.5px;
+  color: #78716c;
+}
+
+/* ── Form ── */
+.pap-form {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: #2a3358 transparent;
+}
+.pap-form::-webkit-scrollbar { width: 4px; }
+.pap-form::-webkit-scrollbar-thumb { background: #2a3358; border-radius: 2px; }
+
+.pap-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.pap-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pap-required {
+  color: #f87171;
+  font-weight: 700;
+}
+
+.pap-input {
+  width: 100%;
+  padding: 7px 10px;
+  background: #111421;
+  border: 1.5px solid #1e2540;
+  border-radius: 7px;
+  color: #e2e8f0;
+  font-size: 12.5px;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.pap-input:focus {
+  outline: none;
+  border-color: #4c6ef5;
+  box-shadow: 0 0 0 3px rgba(76, 110, 245, 0.15);
+}
+.pap-input--error {
+  border-color: #f87171 !important;
+}
+
+.pap-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+  cursor: pointer;
+}
+.pap-select option {
+  background: #1e2438;
+}
+
+.pap-textarea {
+  resize: vertical;
+  min-height: 52px;
+  line-height: 1.5;
+}
+
+.pap-error {
+  font-size: 11px;
+  color: #f87171;
+  margin: 0;
+}
+.pap-hint {
+  font-size: 10.5px;
+  color: #334155;
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ── Raw coords ── */
+.pap-raw-toggle {
+  background: transparent;
+  border: none;
+  color: #3d5273;
+  font-size: 11.5px;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  transition: color 0.12s;
+}
+.pap-raw-toggle:hover { color: #64748b; }
+
+.pap-raw-table {
+  margin-top: 6px;
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid #1e2540;
+}
+.pap-raw-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.pap-raw-table th {
+  background: #1e2438;
+  color: #64748b;
+  padding: 5px 8px;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid #1e2540;
+}
+.pap-raw-table td {
+  padding: 4px 8px;
+  color: #94a3b8;
+  border-bottom: 1px solid #111421;
+}
+.pap-raw-table tr:last-child td { border-bottom: none; }
+.pap-raw-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+/* ── Footer ── */
+.pap-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-top: 1px solid #1e2540;
+  background: #1a1f35;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.pap-footer-left {
+  display: flex;
+  gap: 6px;
+}
+
+.pap-action-btn {
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.pap-action-btn--ghost {
+  background: transparent;
+  border-color: #2a3358;
+  color: #64748b;
+}
+.pap-action-btn--ghost:hover {
+  background: rgba(255,255,255,0.04);
+  color: #94a3b8;
+  border-color: #3d5273;
+}
+.pap-action-btn--danger {
+  background: transparent;
+  border-color: rgba(239,68,68,0.3);
+  color: #f87171;
+}
+.pap-action-btn--danger:hover {
+  background: rgba(239,68,68,0.1);
+  border-color: #f87171;
+}
+
+.pap-save-btn {
+  padding: 7px 16px;
+  background: #4c6ef5;
+  border: none;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.pap-save-btn:hover:not(:disabled) {
+  background: #5c7cfa;
+  box-shadow: 0 4px 12px rgba(76, 110, 245, 0.3);
+}
+.pap-save-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pap-save-btn--saved {
+  background: #10b981 !important;
+}
+.pap-save-btn--clean {
+  opacity: 0.5;
+}
