@@ -587,6 +587,26 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       canvas.requestRenderAll()
       emitViewportChange()
     },
+    focusParcel(layerId, parcelId) {
+      const canvas = fc.current
+      const tr = transformRef.current
+      const layer = layersRef.current.find(item => item.id === layerId)
+      const parcel = layer?.parcels.find(item => item.id === parcelId)
+      if (!canvas || !tr || !parcel?.coordinates?.length) return
+      const points = parcel.coordinates.map(coord => worldToCanvas(coord, tr))
+      const minX = Math.min(...points.map(point => point.x))
+      const maxX = Math.max(...points.map(point => point.x))
+      const minY = Math.min(...points.map(point => point.y))
+      const maxY = Math.max(...points.map(point => point.y))
+      const width = Math.max(1, maxX - minX)
+      const height = Math.max(1, maxY - minY)
+      const zoom = Math.min(Math.max(Math.min((canvas.width - 180) / width, (canvas.height - 180) / height), 0.05), 20)
+      const cx = (minX + maxX) / 2
+      const cy = (minY + maxY) / 2
+      canvas.setViewportTransform([zoom, 0, 0, zoom, canvas.width / 2 - cx * zoom, canvas.height / 2 - cy * zoom])
+      canvas.requestRenderAll()
+      emitViewportChange()
+    },
     exportPNG() {
       return fc.current?.toDataURL({ format: 'png', multiplier: 2 }) || null
     },

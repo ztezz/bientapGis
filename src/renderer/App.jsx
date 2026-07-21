@@ -21,6 +21,7 @@ import ExportModal           from '@components/ExportModal'
 import MapNavigator          from '@components/MapNavigator'
 import BasemapControl        from '@components/BasemapControl'
 import ImportModal           from '@components/ImportModal'
+import ParcelSearchModal     from '@components/ParcelSearchModal'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -82,6 +83,7 @@ export default function App() {
   const [showValidation, setShowValidation] = useState(false)
   const [showExport,     setShowExport]     = useState(false)
   const [showImport,     setShowImport]     = useState(false)
+  const [showSearch,     setShowSearch]     = useState(false)
   const [snapping,       setSnapping]       = useState(true)
   const [viewportInfo,   setViewportInfo]   = useState({ zoom: 1, scaleMetersPer100Px: null, worldBounds: null })
   const [basemapEnabled, setBasemapEnabled] = useState(() => localStorage.getItem('vn_basemap_enabled') === 'true')
@@ -89,6 +91,7 @@ export default function App() {
   const [basemapOpacity, setBasemapOpacity] = useState(() => Number(localStorage.getItem('vn_basemap_opacity')) || 0.75)
   const [basemapError,   setBasemapError]   = useState('')
   const [rightTab,       setRightTab]       = useState('layers') // 'layers' | 'attrs' | 'multisel'
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => localStorage.getItem('vn_right_panel_open') !== 'false')
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
   // Multi-select: [{ layerId, parcelId }]
   const [multiSelected,  setMultiSelected]  = useState([])
@@ -98,6 +101,17 @@ export default function App() {
   useEffect(() => { localStorage.setItem('vn_basemap_enabled', String(basemapEnabled)) }, [basemapEnabled])
   useEffect(() => { localStorage.setItem('vn_basemap_source', basemapSource); setBasemapError('') }, [basemapSource])
   useEffect(() => { localStorage.setItem('vn_basemap_opacity', String(basemapOpacity)) }, [basemapOpacity])
+  useEffect(() => { localStorage.setItem('vn_right_panel_open', String(rightPanelOpen)) }, [rightPanelOpen])
+  useEffect(() => {
+    const openSearch = event => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+        event.preventDefault()
+        setShowSearch(true)
+      }
+    }
+    window.addEventListener('keydown', openSearch)
+    return () => window.removeEventListener('keydown', openSearch)
+  }, [])
 
   // Khi selection thay đổi → auto chuyển sang tab attrs
   useEffect(() => {
@@ -106,7 +120,7 @@ export default function App() {
 
   // Khi multiSelected thay đổi → auto chuyển sang tab multisel
   useEffect(() => {
-    if (multiSelected.length > 0) { setRightTab('multisel'); }
+    if (multiSelected.length > 0) { setRightTab('multisel') }
   }, [multiSelected.length])
 
   // Sync activeLayerId khi layers thay đổi
@@ -229,6 +243,7 @@ export default function App() {
           <button className="top-btn top-btn--validate" onClick={() => setShowValidation(true)} title="Kiểm tra hình học và thuộc tính">
             ✓ Kiểm tra
           </button>
+          <button className="top-btn" onClick={() => setShowSearch(true)} title="Tra cứu thửa đất [Ctrl+F]">⌕ Tra cứu</button>
           <button className="top-btn" onClick={() => setShowImport(true)} title="Import JSON, GeoJSON hoặc CSV">⬆ Import GIS</button>
           <button className="top-btn top-btn--primary" onClick={() => setShowExport(true)} title="Xuất JSON, GeoJSON hoặc CSV">⬇ Xuất GIS</button>
 
@@ -349,7 +364,23 @@ export default function App() {
         </div>
 
         {/* ── Right panel ─────────────────────────────────── */}
-        <aside className="right-panel">
+        <aside className={`right-panel ${rightPanelOpen ? '' : 'right-panel--collapsed'}`}>
+          <button
+            className="right-panel-toggle"
+            onClick={() => setRightPanelOpen(value => !value)}
+            title={rightPanelOpen ? 'Ẩn bảng bên phải' : 'Hiện bảng lớp và thuộc tính'}
+            aria-label={rightPanelOpen ? 'Ẩn bảng bên phải' : 'Hiện bảng bên phải'}
+          >
+            {rightPanelOpen ? '›' : '‹'}
+          </button>
+          {!rightPanelOpen && (
+            <div className="right-panel-rail">
+              <button onClick={() => { setRightPanelOpen(true); setRightTab('layers') }} title="Quản lý lớp">☰</button>
+              <button onClick={() => { setRightPanelOpen(true); setRightTab('attrs') }} title="Thuộc tính">⊞</button>
+              <button onClick={() => { setRightPanelOpen(true); setRightTab('multisel') }} title="Vùng đã chọn">⬚</button>
+            </div>
+          )}
+          <div className="right-panel-body">
           {/* Tab switcher */}
           <div className="right-tabs">
             <button
@@ -470,6 +501,7 @@ export default function App() {
               ● Đã tự lưu
             </span>
           </div>
+          </div>
         </aside>
       </div>
 
@@ -529,6 +561,18 @@ export default function App() {
           importJSON(project)
           setMultiSelected([])
           clearSelection()
+        }}
+      />
+
+      <ParcelSearchModal
+        open={showSearch}
+        layers={layers}
+        onClose={() => setShowSearch(false)}
+        onSelect={(layerId, parcelId) => {
+          selectParcel(layerId, parcelId)
+          setRightTab('attrs')
+          setTool('pick')
+          requestAnimationFrame(() => canvasRef.current?.focusParcel(layerId, parcelId))
         }}
       />
     </div>
