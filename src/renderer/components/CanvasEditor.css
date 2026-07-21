@@ -3,8 +3,9 @@
 .canvas-editor-wrapper {
   position: absolute;
   inset: 0;                /* top:0 right:0 bottom:0 left:0 — fill toàn bộ .canvas-area */
+  z-index: 5;
   overflow: hidden;
-  background: #1a1d2e;
+  background: transparent;
 }
 
 /* Fabric.js tạo ra .canvas-container bọc ngoài <canvas> — phải full size */

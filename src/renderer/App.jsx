@@ -13,11 +13,14 @@
  *   └────────────┴──────────────────────┴──────────────────┘
  */
 
-import React, { useState, useRef, useEffect, useCallback } from 'react'
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
 import CanvasEditor          from '@components/CanvasEditor'
 import DataInputModal        from '@components/DataInputModal'
 import ValidationModal       from '@components/ValidationModal'
 import ExportModal           from '@components/ExportModal'
+import MapNavigator          from '@components/MapNavigator'
+import BasemapControl        from '@components/BasemapControl'
+import ImportModal           from '@components/ImportModal'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -26,6 +29,8 @@ import { useLayerManager }   from '@modules/useLayerManager'
 import { PROVINCES }         from '@modules/vn2000'
 import { loadSettingsFromFile } from '@modules/settingsStore'
 import './App.css'
+
+const BasemapLayer = lazy(() => import('@components/BasemapLayer'))
 
 // ── Tool definitions ──────────────────────────────────────
 const TOOL_GROUPS = [
@@ -65,7 +70,7 @@ export default function App() {
     undo, redo,
     selectParcel, clearSelection, getSelectedParcel,
     getActiveLayerId,
-    importJSON, resetStore,
+    importJSON, appendLayers, resetStore,
   } = useLayerManager()
 
   // ── UI State ────────────────────────────────────────────
@@ -76,7 +81,13 @@ export default function App() {
   const [showDataInput,  setShowDataInput]  = useState(false)
   const [showValidation, setShowValidation] = useState(false)
   const [showExport,     setShowExport]     = useState(false)
+  const [showImport,     setShowImport]     = useState(false)
   const [snapping,       setSnapping]       = useState(true)
+  const [viewportInfo,   setViewportInfo]   = useState({ zoom: 1, scaleMetersPer100Px: null, worldBounds: null })
+  const [basemapEnabled, setBasemapEnabled] = useState(() => localStorage.getItem('vn_basemap_enabled') === 'true')
+  const [basemapSource,  setBasemapSource]  = useState(() => localStorage.getItem('vn_basemap_source') || 'esriSatellite')
+  const [basemapOpacity, setBasemapOpacity] = useState(() => Number(localStorage.getItem('vn_basemap_opacity')) || 0.75)
+  const [basemapError,   setBasemapError]   = useState('')
   const [rightTab,       setRightTab]       = useState('layers') // 'layers' | 'attrs' | 'multisel'
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
   // Multi-select: [{ layerId, parcelId }]
@@ -84,6 +95,9 @@ export default function App() {
 
   // Khởi động: load AI settings từ file
   useEffect(() => { loadSettingsFromFile() }, [])
+  useEffect(() => { localStorage.setItem('vn_basemap_enabled', String(basemapEnabled)) }, [basemapEnabled])
+  useEffect(() => { localStorage.setItem('vn_basemap_source', basemapSource); setBasemapError('') }, [basemapSource])
+  useEffect(() => { localStorage.setItem('vn_basemap_opacity', String(basemapOpacity)) }, [basemapOpacity])
 
   // Khi selection thay đổi → auto chuyển sang tab attrs
   useEffect(() => {
@@ -174,29 +188,6 @@ export default function App() {
     clearSelection()   // bỏ single-select khi đang box-select
   }, [clearSelection])
 
-  // Import JSON
-  const handleImport = useCallback(async () => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.accept = '.json'
-    input.onchange = (e) => {
-      const file = e.target.files[0]
-      if (!file) return
-      const reader = new FileReader()
-      reader.onload = (ev) => {
-        try {
-          const json = JSON.parse(ev.target.result)
-          importJSON(json)
-          alert(`Import thành công! ${json.layers?.length || 0} lớp, ${json.metadata?.total_parcels || 0} vùng.`)
-        } catch (err) {
-          alert('File JSON không hợp lệ: ' + err.message)
-        }
-      }
-      reader.readAsText(file)
-    }
-    input.click()
-  }, [importJSON])
-
   // Fit to view
   const handleFitView = () => canvasRef.current?.fitToView()
 
@@ -238,7 +229,7 @@ export default function App() {
           <button className="top-btn top-btn--validate" onClick={() => setShowValidation(true)} title="Kiểm tra hình học và thuộc tính">
             ✓ Kiểm tra
           </button>
-          <button className="top-btn" onClick={handleImport} title="Import JSON">⬆ Import</button>
+          <button className="top-btn" onClick={() => setShowImport(true)} title="Import JSON, GeoJSON hoặc CSV">⬆ Import GIS</button>
           <button className="top-btn top-btn--primary" onClick={() => setShowExport(true)} title="Xuất JSON, GeoJSON hoặc CSV">⬇ Xuất GIS</button>
 
           {/* Settings */}
@@ -309,6 +300,18 @@ export default function App() {
 
         {/* ── Canvas ─────────────────────────────────────── */}
         <div className="canvas-area">
+          {basemapEnabled && (
+            <Suspense fallback={<div className="basemap-loading">Đang tải bản đồ nền...</div>}>
+              <BasemapLayer
+                enabled
+                source={basemapSource}
+                opacity={basemapOpacity}
+                viewport={viewportInfo}
+                provinceKey={province}
+                onError={setBasemapError}
+              />
+            </Suspense>
+          )}
           <CanvasEditor
             ref={canvasRef}
             layers={layers}
@@ -316,12 +319,32 @@ export default function App() {
             selectedParcelId={selected?.parcelId}
             multiSelectedIds={multiSelected.map(s => s.parcelId)}
             snappingEnabled={snapping}
+            transparentBackground={basemapEnabled}
             tool={tool}
             onParcelDrawn={handleParcelDrawn}
             onParcelSelected={handleParcelSelected}
             onVertexMoved={handleVertexMoved}
             onAreaChange={setStatusBar}
             onMultiSelect={handleMultiSelect}
+            onViewportChange={setViewportInfo}
+          />
+          <MapNavigator
+            layers={layers}
+            viewport={viewportInfo}
+            onZoomIn={() => canvasRef.current?.zoomIn()}
+            onZoomOut={() => canvasRef.current?.zoomOut()}
+            onResetZoom={() => canvasRef.current?.resetZoom()}
+            onFit={() => canvasRef.current?.fitToView()}
+            onCenterWorld={(x, y) => canvasRef.current?.centerOnWorldPoint(x, y)}
+          />
+          <BasemapControl
+            enabled={basemapEnabled}
+            source={basemapSource}
+            opacity={basemapOpacity}
+            error={basemapError}
+            onEnabled={setBasemapEnabled}
+            onSource={setBasemapSource}
+            onOpacity={setBasemapOpacity}
           />
         </div>
 
@@ -494,6 +517,19 @@ export default function App() {
         province={PROVINCES[province]}
         selections={multiSelected}
         onClose={() => setShowExport(false)}
+      />
+
+      <ImportModal
+        open={showImport}
+        provinceKey={province}
+        onClose={() => setShowImport(false)}
+        onAppend={(importedLayers) => appendLayers(importedLayers)}
+        onReplace={(project) => {
+          canvasRef.current?.resetWorldTransform()
+          importJSON(project)
+          setMultiSelected([])
+          clearSelection()
+        }}
       />
     </div>
   )

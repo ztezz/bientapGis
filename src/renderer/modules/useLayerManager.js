@@ -76,6 +76,9 @@ export function useLayerManager() {
   const importJSON = useCallback((json) =>
     layerStore.importJSON(json), [])
 
+  const appendLayers = useCallback((layers) =>
+    layerStore.appendLayers(layers), [])
+
   const resetStore = useCallback(() =>
     layerStore.reset(), [])
 
@@ -100,6 +103,6 @@ export function useLayerManager() {
     selectParcel, clearSelection, getSelectedParcel,
 
     // I/O
-    exportJSON, importJSON, resetStore,
+    exportJSON, importJSON, appendLayers, resetStore,
   }
 }

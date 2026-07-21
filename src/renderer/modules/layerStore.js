@@ -488,6 +488,7 @@ class LayerStore {
         attributes:  { ...DEFAULT_PARCEL_ATTRS, ...p.attributes },
         area_m2:     p.area_m2     || 0,
         perimeter_m: p.perimeter_m || 0,
+        ...computeParcelGeom(p.coordinates || []),
         selected:    false,
         createdAt:   p.createdAt   || now(),
         updatedAt:   p.updatedAt   || now(),
@@ -496,6 +497,37 @@ class LayerStore {
     this._selected = null
     this._save()
     this._notify()
+  }
+
+  appendLayers(importedLayers) {
+    if (!Array.isArray(importedLayers) || !importedLayers.length) return 0
+    this._recordHistory()
+    const startOrder = this._layers.length
+    importedLayers.forEach((source, index) => {
+      const layerId = uuid()
+      const color = source.color || LAYER_COLORS[(startOrder + index) % LAYER_COLORS.length]
+      this._layers.push({
+        ...source,
+        id: layerId,
+        name: source.name || `Lớp import ${index + 1}`,
+        type: 'parcel', visible: source.visible !== false, locked: false,
+        opacity: source.opacity ?? 1, color, fillColor: hexToFill(color),
+        order: startOrder + index,
+        parcels: (source.parcels || []).map(parcel => ({
+          ...parcel,
+          id: uuid(),
+          layerId,
+          selected: false,
+          coordinates: JSON.parse(JSON.stringify(parcel.coordinates || [])),
+          attributes: { ...DEFAULT_PARCEL_ATTRS, ...(parcel.attributes || {}) },
+          ...computeParcelGeom(parcel.coordinates || []),
+          updatedAt: now(),
+        })),
+      })
+    })
+    this._save()
+    this._notify()
+    return importedLayers.length
   }
 
   /** Reset toàn bộ về mặc định */

@@ -125,12 +125,14 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     selectedParcelId,
     multiSelectedIds = [],   // string[] parcelId đang được box-select
     snappingEnabled = true,
+    transparentBackground = false,
     tool = 'pick',
     onParcelDrawn,      // (layerId, coordinates[]) => void
     onParcelSelected,   // (layerId, parcelId) => void
     onVertexMoved,      // (layerId, parcelId, newCoords) => void
     onAreaChange,       // ({ area, perimeter }) => void
     onMultiSelect,      // ([{ layerId, parcelId }]) => void
+    onViewportChange,
   },
   ref
 ) {
@@ -166,6 +168,31 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
   const [status, setStatus] = useState('Sẵn sàng | Alt+Drag hoặc giữa chuột để pan | Scroll để zoom')
   const [cursorCoord, setCursorCoord] = useState(null)
+  function emitViewportChange() {
+    const canvas = fc.current
+    const tr = transformRef.current
+    if (!canvas) return
+    const zoom = canvas.getZoom() || 1
+    const width = canvas.width || 1
+    const height = canvas.height || 1
+    const inverse = fabric.util.invertTransform(canvas.viewportTransform)
+    const topLeft = fabric.util.transformPoint(new fabric.Point(0, 0), inverse)
+    const bottomRight = fabric.util.transformPoint(new fabric.Point(width, height), inverse)
+    const worldA = tr ? canvasToWorld(topLeft, tr) : null
+    const worldB = tr ? canvasToWorld(bottomRight, tr) : null
+    const info = {
+      zoom,
+      sceneBounds: { left: topLeft.x, top: topLeft.y, right: bottomRight.x, bottom: bottomRight.y },
+      scaleMetersPer100Px: tr ? 100 / (tr.scale * zoom) : null,
+      worldBounds: tr ? {
+        minX: Math.min(worldA.x, worldB.x),
+        maxX: Math.max(worldA.x, worldB.x),
+        minY: Math.min(worldA.y, worldB.y),
+        maxY: Math.max(worldA.y, worldB.y),
+      } : null,
+    }
+    onViewportChange?.(info)
+  }
 
   useEffect(() => { activeToolRef.current = tool }, [tool])
   useEffect(() => { snappingRef.current = snappingEnabled }, [snappingEnabled])
@@ -274,6 +301,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       let z = canvas.getZoom() * (0.999 ** opt.e.deltaY)
       z = Math.min(Math.max(z, 0.05), 80)
       canvas.zoomToPoint(new fabric.Point(opt.e.offsetX, opt.e.offsetY), z)
+      emitViewportChange()
       opt.e.preventDefault()
       opt.e.stopPropagation()
     })
@@ -333,6 +361,12 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   useEffect(() => {
     if (!snappingEnabled) showSnapMarker(null)
   }, [snappingEnabled])
+
+  useEffect(() => {
+    const canvas = fc.current
+    if (!canvas) return
+    canvas.setBackgroundColor(transparentBackground ? 'rgba(0,0,0,0)' : '#1a1d2e', canvas.requestRenderAll.bind(canvas))
+  }, [transparentBackground])
 
   // ── Vẽ lại khi layers thay đổi ──────────────────────────
 
@@ -443,6 +477,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         vpt[5] += dy
         canvas.setViewportTransform(vpt)
         canvas.requestRenderAll()
+        emitViewportChange()
       }
       lastPan.current = { x: event.clientX, y: event.clientY }
       event.preventDefault()
@@ -494,6 +529,9 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   // ── Expose imperative API ────────────────────────────────
 
   useImperativeHandle(ref, () => ({
+    resetWorldTransform() {
+      transformRef.current = null
+    },
     fitToView() {
       const canvas = fc.current
       const tr = transformRef.current
@@ -510,9 +548,44 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const cy = (topLeft.y + bottomRight.y) / 2
       canvas.setViewportTransform([zoom, 0, 0, zoom, W / 2 - cx * zoom, H / 2 - cy * zoom])
       canvas.requestRenderAll()
+      emitViewportChange()
     },
     resetZoom() {
       fc.current?.setViewportTransform([1, 0, 0, 1, 0, 0])
+      emitViewportChange()
+    },
+    zoomIn() {
+      const canvas = fc.current
+      if (!canvas) return
+      const next = Math.min(canvas.getZoom() * 1.25, 80)
+      canvas.zoomToPoint(new fabric.Point(canvas.width / 2, canvas.height / 2), next)
+      emitViewportChange()
+    },
+    zoomOut() {
+      const canvas = fc.current
+      if (!canvas) return
+      const next = Math.max(canvas.getZoom() / 1.25, 0.05)
+      canvas.zoomToPoint(new fabric.Point(canvas.width / 2, canvas.height / 2), next)
+      emitViewportChange()
+    },
+    centerOnScenePoint(x, y) {
+      const canvas = fc.current
+      if (!canvas) return
+      const zoom = canvas.getZoom() || 1
+      canvas.setViewportTransform([zoom, 0, 0, zoom, canvas.width / 2 - x * zoom, canvas.height / 2 - y * zoom])
+      canvas.requestRenderAll()
+      emitViewportChange()
+    },
+    centerOnWorldPoint(x, y) {
+      const tr = transformRef.current
+      if (!tr) return
+      const point = worldToCanvas({ x, y }, tr)
+      const canvas = fc.current
+      if (!canvas) return
+      const zoom = canvas.getZoom() || 1
+      canvas.setViewportTransform([zoom, 0, 0, zoom, canvas.width / 2 - point.x * zoom, canvas.height / 2 - point.y * zoom])
+      canvas.requestRenderAll()
+      emitViewportChange()
     },
     exportPNG() {
       return fc.current?.toDataURL({ format: 'png', multiplier: 2 }) || null
@@ -553,6 +626,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     })
 
     canvas.renderAll()
+    requestAnimationFrame(emitViewportChange)
   }
 
   function renderParcel(canvas, layer, parcel, isSelected, isMultiSelected = false) {

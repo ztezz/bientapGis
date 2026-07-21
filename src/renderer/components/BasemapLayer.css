@@ -1,0 +1,4 @@
+.basemap-layer { position: absolute; inset: 0; z-index: 0; opacity: 0; pointer-events: none; background: #1a1d2e; transition: opacity .18s; }
+.basemap-layer.is-visible { opacity: 1; }
+.basemap-layer .leaflet-control-attribution { font-size: 8px; background: rgba(255,255,255,.65); }
+.basemap-layer .leaflet-tile-pane { filter: saturate(.9) contrast(.95); }

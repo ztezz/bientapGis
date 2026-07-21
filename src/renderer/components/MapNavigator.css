@@ -1,0 +1,11 @@
+.map-zoom-controls { position: absolute; top: 12px; left: 12px; z-index: 12; display: grid; gap: 3px; }
+.map-zoom-controls button { width: 32px; height: 30px; border: 1px solid #2d385d; border-radius: 6px; background: rgba(17,20,33,.9); color: #94a3b8; font-size: 14px; font-weight: 700; cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
+.map-zoom-controls button:hover { border-color: #4c6ef5; color: #dbeafe; background: #1b2138; }
+.map-minimap { position: absolute; right: 12px; bottom: 34px; z-index: 12; width: 200px; padding: 5px; border: 1px solid #2d385d; border-radius: 8px; background: rgba(14,17,30,.92); box-shadow: 0 5px 22px rgba(0,0,0,.38); }
+.map-minimap-title { display: flex; justify-content: space-between; padding: 1px 3px 5px; color: #64748b; font-size: 9.5px; text-transform: uppercase; letter-spacing: .5px; }
+.map-minimap-title b { color: #93c5fd; font-family: 'JetBrains Mono',monospace; }
+.map-minimap svg { display: block; width: 100%; height: 120px; border-radius: 4px; cursor: crosshair; }
+.map-minimap-hint { display: block; padding: 4px 2px 0; color: #3d5273; font-size: 9px; text-align: center; }
+.map-scale-bar { position: absolute; left: 58px; bottom: 32px; z-index: 12; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; color: #cbd5e1; font: 10px 'JetBrains Mono',monospace; text-shadow: 0 1px 3px #000; pointer-events: none; }
+.map-scale-bar i { display: block; height: 6px; border: solid #e2e8f0; border-width: 0 2px 2px; }
+@media(max-width:900px){.map-minimap{width:155px}.map-minimap svg{height:92px}}
