@@ -14,8 +14,9 @@ export default function ParcelPreview({ rows }) {
   const W = 520, H = 290, pad = 42
   const minX = Math.min(...data.map(p => p.x)), maxX = Math.max(...data.map(p => p.x))
   const minY = Math.min(...data.map(p => p.y)), maxY = Math.max(...data.map(p => p.y))
-  const scale = Math.min((W - pad * 2) / Math.max(1, maxX - minX), (H - pad * 2) / Math.max(1, maxY - minY))
-  const projected = data.map(point => ({ ...point, sx: pad + (point.x - minX) * scale, sy: pad + (maxY - point.y) * scale }))
+  // VN-2000: Y (Easting) nằm ngang, X (Northing) nằm dọc và hướng Bắc ở phía trên.
+  const scale = Math.min((W - pad * 2) / Math.max(1, maxY - minY), (H - pad * 2) / Math.max(1, maxX - minX))
+  const projected = data.map(point => ({ ...point, sx: pad + (point.y - minY) * scale, sy: pad + (maxX - point.x) * scale }))
   const polygon = projected.map(point => `${point.sx},${point.sy}`).join(' ')
   const area = calculateArea(data), perimeter = calculatePerimeter(data)
 
