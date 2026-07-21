@@ -1,0 +1,23 @@
+.export-overlay { position: fixed; inset: 0; z-index: 9200; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(4,7,16,.72); backdrop-filter: blur(5px); }
+.export-modal { width: min(660px,94vw); max-height: 90vh; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #2e3a61; border-radius: 12px; background: #161929; box-shadow: 0 24px 80px rgba(0,0,0,.58); }
+.export-modal header { display: flex; justify-content: space-between; align-items: center; padding: 13px 16px; border-bottom: 1px solid #26304f; background: #1b2036; }
+.export-modal header div { display: flex; flex-direction: column; gap: 2px; }
+.export-modal header strong { color: #e2e8f0; font-size: 14px; }
+.export-modal header span { color: #52617c; font-size: 11px; }
+.export-modal header button { border: 0; background: transparent; color: #64748b; cursor: pointer; }
+.export-body { overflow-y: auto; padding: 15px; }
+.export-label { margin: 0 0 7px; color: #64748b; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .7px; }
+.export-formats { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-bottom: 17px; }
+.export-formats button { min-height: 92px; padding: 10px; border: 1px solid #293252; border-radius: 8px; background: #111421; text-align: left; cursor: pointer; }
+.export-formats button.is-active { border-color: #4c6ef5; background: rgba(76,110,245,.12); }
+.export-formats strong { display: block; margin-bottom: 5px; color: #cbd5e1; font-size: 12px; }
+.export-formats span { color: #52617c; font-size: 10.5px; line-height: 1.45; }
+.export-scope { display: flex; align-items: center; gap: 7px; margin: 7px 0; color: #94a3b8; font-size: 12px; }
+.export-scope.is-disabled { opacity: .4; }
+.export-crs { margin-top: 14px; padding: 8px 10px; border: 1px solid #25304e; border-radius: 6px; background: #111421; color: #60a5fa; font: 10.5px 'JetBrains Mono',monospace; }
+.export-message { margin: 9px 0 0; color: #34d399; font-size: 11px; word-break: break-all; }
+.export-modal footer { display: flex; justify-content: flex-end; gap: 8px; padding: 11px 15px; border-top: 1px solid #26304f; background: #1b2036; }
+.export-modal footer button { padding: 7px 15px; border: 1px solid #334155; border-radius: 6px; background: transparent; color: #94a3b8; cursor: pointer; }
+.export-modal footer .is-primary { border-color: #4c6ef5; background: #4c6ef5; color: #fff; font-weight: 700; }
+.export-modal footer button:disabled { opacity: .4; cursor: not-allowed; }
+@media(max-width:650px){.export-formats{grid-template-columns:1fr}.export-formats button{min-height:0}}

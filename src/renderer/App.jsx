@@ -17,6 +17,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import CanvasEditor          from '@components/CanvasEditor'
 import DataInputModal        from '@components/DataInputModal'
 import ValidationModal       from '@components/ValidationModal'
+import ExportModal           from '@components/ExportModal'
 import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
@@ -64,7 +65,7 @@ export default function App() {
     undo, redo,
     selectParcel, clearSelection, getSelectedParcel,
     getActiveLayerId,
-    exportJSON, importJSON, resetStore,
+    importJSON, resetStore,
   } = useLayerManager()
 
   // ── UI State ────────────────────────────────────────────
@@ -74,6 +75,7 @@ export default function App() {
   const [showSettings,   setShowSettings]   = useState(false)
   const [showDataInput,  setShowDataInput]  = useState(false)
   const [showValidation, setShowValidation] = useState(false)
+  const [showExport,     setShowExport]     = useState(false)
   const [snapping,       setSnapping]       = useState(true)
   const [rightTab,       setRightTab]       = useState('layers') // 'layers' | 'attrs' | 'multisel'
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
@@ -172,26 +174,6 @@ export default function App() {
     clearSelection()   // bỏ single-select khi đang box-select
   }, [clearSelection])
 
-  // Export JSON
-  const handleExport = useCallback(async () => {
-    const prov = PROVINCES[province]
-    const data = exportJSON(prov?.label || province, prov?.meridian)
-    if (window.electronAPI?.saveJSON) {
-      const res = await window.electronAPI.saveJSON(data)
-      if (res.success) {
-        alert(`Đã xuất: ${res.filePath}`)
-        window.electronAPI.showItemInFolder?.(res.filePath)
-      }
-    } else {
-      // Fallback browser download
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-      const a = document.createElement('a')
-      a.href = URL.createObjectURL(blob)
-      a.download = `vn-land-editor-${Date.now()}.json`
-      a.click()
-    }
-  }, [exportJSON, province])
-
   // Import JSON
   const handleImport = useCallback(async () => {
     const input = document.createElement('input')
@@ -257,7 +239,7 @@ export default function App() {
             ✓ Kiểm tra
           </button>
           <button className="top-btn" onClick={handleImport} title="Import JSON">⬆ Import</button>
-          <button className="top-btn top-btn--primary" onClick={handleExport} title="Xuất JSON chuẩn VN-2000">⬇ Xuất JSON</button>
+          <button className="top-btn top-btn--primary" onClick={() => setShowExport(true)} title="Xuất JSON, GeoJSON hoặc CSV">⬇ Xuất GIS</button>
 
           {/* Settings */}
           <button
@@ -503,6 +485,15 @@ export default function App() {
           setRightTab('attrs')
           setTool('pick')
         }}
+      />
+
+      <ExportModal
+        open={showExport}
+        layers={layers}
+        provinceKey={province}
+        province={PROVINCES[province]}
+        selections={multiSelected}
+        onClose={() => setShowExport(false)}
       />
     </div>
   )

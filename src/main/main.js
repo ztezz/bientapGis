@@ -102,6 +102,32 @@ ipcMain.handle('dialog:saveJSON', async (event, jsonData) => {
   }
 })
 
+/** Lưu file dữ liệu GIS tổng quát (JSON, GeoJSON, CSV). */
+ipcMain.handle('dialog:saveFile', async (event, payload) => {
+  const allowed = {
+    json: { name: 'JSON Files', extensions: ['json'] },
+    geojson: { name: 'GeoJSON Files', extensions: ['geojson', 'json'] },
+    csv: { name: 'CSV Files', extensions: ['csv'] },
+  }
+  const extension = String(payload?.extension || '').toLowerCase()
+  const filter = allowed[extension]
+  if (!filter) return { success: false, error: 'Định dạng file không được hỗ trợ' }
+
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: payload.title || 'Xuất dữ liệu GIS',
+    defaultPath: payload.defaultName || `vn-land-editor.${extension}`,
+    filters: [filter],
+  })
+  if (canceled || !filePath) return { success: false, canceled: true }
+
+  try {
+    fs.writeFileSync(filePath, String(payload.content ?? ''), 'utf-8')
+    return { success: true, filePath }
+  } catch (err) {
+    return { success: false, error: err.message }
+  }
+})
+
 /**
  * Mở thư mục chứa file đã lưu trong Explorer/Finder
  */

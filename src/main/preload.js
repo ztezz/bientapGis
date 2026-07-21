@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // File dialogs
   openImage: () => ipcRenderer.invoke('dialog:openImage'),
   saveJSON: (data) => ipcRenderer.invoke('dialog:saveJSON', data),
+  saveFile: (payload) => ipcRenderer.invoke('dialog:saveFile', payload),
   showItemInFolder: (filePath) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
 
   // App info
