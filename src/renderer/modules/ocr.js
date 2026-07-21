@@ -32,7 +32,11 @@ Quy tắc bắt buộc:
 6. Giữ nguyên số thập phân như trong ảnh (đừng làm tròn).
 7. Quét TOÀN BỘ ảnh từ trên xuống dưới, không dừng sau dòng đầu tiên.
 8. Trả về TẤT CẢ các hàng của bảng theo đúng thứ tự, tuyệt đối không chỉ trả một điểm mẫu.
-9. Nếu ảnh mờ hoặc khó đọc, hãy cố gắng đọc hết khả năng.`
+9. Bảng có thể có cột "Kích thước cạnh (m)" ở bên phải. KHÔNG được nhầm các số chiều dài cạnh như 19,00 hoặc 5,00 thành X/Y.
+10. Số lượng đỉnh KHÔNG cố định: có thể là 3, 4, 5, 10, 20 hoặc nhiều hơn. Phải đọc đến hết bảng.
+11. Nếu dòng cuối lặp lại điểm đầu để khép kín (ví dụ 1,2,3,...,N,1), chỉ bỏ đúng dòng khép kín trùng tọa độ; giữ đầy đủ toàn bộ N đỉnh thực.
+12. Dấu phẩy trong ảnh có thể là dấu thập phân: 1237527,999 phải được giữ là 1237527.999.
+13. Nếu ảnh mờ hoặc khó đọc, hãy cố gắng đọc hết khả năng.`
 
 function contentToText(content) {
   if (typeof content === 'string') return content
@@ -80,7 +84,19 @@ export function parseCompletionResponse(rawText) {
       // Bỏ qua heartbeat hoặc event metadata không phải JSON completion.
     }
   }
-  if (deltaChunks.length) return deltaChunks.join('').trim()
+  if (deltaChunks.length) {
+    let merged = ''
+    for (const chunk of deltaChunks) {
+      if (!chunk) continue
+      if (chunk.startsWith(merged)) merged = chunk
+      else if (!merged.startsWith(chunk) && !merged.endsWith(chunk)) {
+        let overlap = Math.min(merged.length, chunk.length)
+        while (overlap > 0 && !merged.endsWith(chunk.slice(0, overlap))) overlap--
+        merged += chunk.slice(overlap)
+      }
+    }
+    return merged.trim()
+  }
   return snapshots.sort((a, b) => b.length - a.length)[0]?.trim() || ''
 }
 
@@ -282,6 +298,13 @@ export function parseCoordinatesFromOCR(rawText) {
   const lines = cleaned.split(/\r?\n/)
   const numberToken = /[-+]?\d{1,3}(?:\s\d{3})+(?:[.,]\d+)?|[-+]?\d{1,3}(?:[.,]\d{3}){2,}(?:[.,]\d+)?|[-+]?\d{1,3}[.,]\d{3}[.,]\d+|[-+]?\d{5,8}(?:[.,]\d+)?/g
   const patternXY = /[Xx]\s*[=:]\s*([-+]?\d[\d.,\s]*\d).*?[Yy]\s*[=:]\s*([-+]?\d[\d.,\s]*\d)/
+
+  // Bắt tất cả bộ Điểm|X|Y dù proxy làm mất xuống dòng và ghép cả bảng thành một dòng.
+  const coordinateSource = '[-+]?\\d{5,8}(?:[.,]\\d+)?|[-+]?\\d{1,3}(?:[.,]\\d{3}){1,2}[.,]\\d+'
+  const globalTriplet = new RegExp(`(?:^|[\\s;|])([A-Za-z]?\\d{1,4})\\s*\\|\\s*(${coordinateSource})\\s*\\|\\s*(${coordinateSource})`, 'g')
+  for (const match of cleaned.matchAll(globalTriplet)) {
+    addCoordinate(results, seen, match[1], match[2], match[3])
+  }
 
   // Skip header pattern
   const headerPattern = /^(stt|điểm|point|tên|x\s*[\(\[m]|y\s*[\(\[m]|toa\s*do|coordinate|bảng|table)/i

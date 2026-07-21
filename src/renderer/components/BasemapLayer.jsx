@@ -47,6 +47,8 @@ export default function BasemapLayer({ enabled, source, opacity, viewport, provi
       fadeAnimation: false,
       zoomAnimation: false,
       markerZoomAnimation: false,
+      zoomSnap: 0,
+      zoomDelta: 0.1,
     })
     map.setView([10.8, 106.7], 16)
     mapRef.current = map
@@ -82,18 +84,21 @@ export default function BasemapLayer({ enabled, source, opacity, viewport, provi
     const bounds = viewport?.worldBounds
     if (!map || !enabled || !bounds || !provinceKey) return
     try {
-      const southWest = vn2000ToWGS84(bounds.minX, bounds.minY, provinceKey)
-      const northEast = vn2000ToWGS84(bounds.maxX, bounds.maxY, provinceKey)
-      if (![southWest.lat, southWest.lng, northEast.lat, northEast.lng].every(Number.isFinite)) return
+      const center = vn2000ToWGS84(
+        (bounds.minX + bounds.maxX) / 2,
+        (bounds.minY + bounds.maxY) / 2,
+        provinceKey,
+      )
+      const metersPerPixel = Number(viewport?.scaleMetersPer100Px) / 100
+      if (![center.lat, center.lng, metersPerPixel].every(Number.isFinite) || metersPerPixel <= 0) return
+      const latitudeScale = Math.max(0.01, Math.cos(center.lat * Math.PI / 180))
+      const leafletZoom = Math.log2(156543.03392804097 * latitudeScale / metersPerPixel)
       map.invalidateSize(false)
-      map.fitBounds([
-        [Math.min(southWest.lat, northEast.lat), Math.min(southWest.lng, northEast.lng)],
-        [Math.max(southWest.lat, northEast.lat), Math.max(southWest.lng, northEast.lng)],
-      ], { animate: false, padding: [0, 0] })
+      map.setView([center.lat, center.lng], Math.max(0, Math.min(22, leafletZoom)), { animate: false })
     } catch (error) {
       onError?.(`Không thể đồng bộ bản đồ nền: ${error.message}`)
     }
-  }, [enabled, viewport?.worldBounds, provinceKey])
+  }, [enabled, viewport?.worldBounds, viewport?.scaleMetersPer100Px, provinceKey])
 
   return <div ref={containerRef} className={`basemap-layer ${enabled ? 'is-visible' : ''}`} aria-hidden="true" />
 }

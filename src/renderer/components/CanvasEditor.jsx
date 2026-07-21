@@ -49,36 +49,38 @@ const SNAP_PX   = 12   // snap to first point (px) khi kết thúc vẽ
 function createWorldTransform(bbox, W, H, padding = 60) {
   const availableW = Math.max(1, W - padding * 2)
   const availableH = Math.max(1, H - padding * 2)
-  const rangeX = bbox.maxX - bbox.minX
-  const rangeY = bbox.maxY - bbox.minY
-  const scaleX = rangeX > 0 ? availableW / rangeX : Infinity
-  const scaleY = rangeY > 0 ? availableH / rangeY : Infinity
+  // VN-2000: X = Northing (trục đứng), Y = Easting (trục ngang).
+  const horizontalRange = bbox.maxY - bbox.minY
+  const verticalRange = bbox.maxX - bbox.minX
+  const scaleX = horizontalRange > 0 ? availableW / horizontalRange : Infinity
+  const scaleY = verticalRange > 0 ? availableH / verticalRange : Infinity
   let scale = Math.min(scaleX, scaleY)
   if (!Number.isFinite(scale) || scale <= 0) scale = 1
 
-  const sceneW = rangeX * scale
-  const sceneH = rangeY * scale
+  const sceneW = horizontalRange * scale
+  const sceneH = verticalRange * scale
   const left = padding + (availableW - sceneW) / 2
   const top = padding + (availableH - sceneH) / 2
 
   return {
+    axisConvention: 'easting-horizontal-v1',
     scale,
-    tx: left - bbox.minX * scale,
-    ty: top + bbox.maxY * scale,
+    tx: left - bbox.minY * scale,
+    ty: top + bbox.maxX * scale,
   }
 }
 
 function worldToCanvas(coord, transform) {
   return {
-    x: transform.tx + coord.x * transform.scale,
-    y: transform.ty - coord.y * transform.scale,
+    x: transform.tx + coord.y * transform.scale,
+    y: transform.ty - coord.x * transform.scale,
   }
 }
 
 function canvasToWorld(point, transform) {
   return {
-    x: (point.x - transform.tx) / transform.scale,
-    y: (transform.ty - point.y) / transform.scale,
+    x: (transform.ty - point.y) / transform.scale,
+    y: (point.x - transform.tx) / transform.scale,
   }
 }
 
@@ -322,6 +324,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         opt.e.clientY - lastPan.current.y
       ))
       lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
+      emitViewportChange()
     })
     canvas.on('mouse:up', opt => {
       if (opt.e.button === 1 || isPanning.current) {
@@ -340,6 +343,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         canvas.setWidth(w)
         canvas.setHeight(h)
         canvas.renderAll()
+        emitViewportChange()
       }
     }
 
@@ -539,8 +543,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const bbox = globalBBox(layers)
       if (!bbox) return
       const W = canvas.width, H = canvas.height
-      const topLeft = worldToCanvas({ x: bbox.minX, y: bbox.maxY }, tr)
-      const bottomRight = worldToCanvas({ x: bbox.maxX, y: bbox.minY }, tr)
+      const topLeft = worldToCanvas({ x: bbox.maxX, y: bbox.minY }, tr)
+      const bottomRight = worldToCanvas({ x: bbox.minX, y: bbox.maxY }, tr)
       const sceneW = Math.max(1, Math.abs(bottomRight.x - topLeft.x))
       const sceneH = Math.max(1, Math.abs(bottomRight.y - topLeft.y))
       const zoom = Math.min(Math.max(Math.min((W - 120) / sceneW, (H - 120) / sceneH), 0.05), 80)
@@ -626,7 +630,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     registry.current.clear()
 
     // Transform chung được tạo một lần để mọi thửa giữ đúng tương quan không gian.
-    if (!transformRef.current) {
+    if (!transformRef.current || transformRef.current.axisConvention !== 'easting-horizontal-v1') {
       const bbox = globalBBox(layerList)
       if (bbox) {
         transformRef.current = createWorldTransform(bbox, canvas.width, canvas.height, 60)
