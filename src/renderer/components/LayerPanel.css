@@ -41,6 +41,19 @@
   color: #3d5273;
 }
 
+.lp-header-buttons { display: flex; align-items: center; gap: 5px; }
+.lp-clear-btn {
+  padding: 5px 8px;
+  border: 1px solid rgba(248,113,113,.35);
+  border-radius: 6px;
+  background: rgba(248,113,113,.08);
+  color: #fca5a5;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.lp-clear-btn:hover { border-color: #f87171; background: rgba(248,113,113,.18); color: #fee2e2; }
+
 .lp-add-btn {
   padding: 5px 10px;
   background: rgba(76, 110, 245, 0.18);

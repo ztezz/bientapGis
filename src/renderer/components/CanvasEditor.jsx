@@ -37,6 +37,23 @@ import './CanvasEditor.css'
 const VERTEX_R = 6
 const DRAW_PT_R = 4
 const SNAP_PX   = 12   // snap to first point (px) khi kết thúc vẽ
+const CAD_GRID_SIZE = 96
+const TIMES_CAD_HEIGHT_FACTOR = 0.80
+const TIMES_CAD_BASELINE_OFFSET = 0.12
+const cadFontLoads = new Map()
+
+function ensureCadFont(font, onLoaded) {
+  if (!font?.url || !font.family || typeof FontFace === 'undefined') return
+  if (cadFontLoads.has(font.family)) return
+  const load = new FontFace(font.family, `url("${font.url}")`).load()
+    .then(face => {
+      document.fonts.add(face)
+      onLoaded?.()
+      return true
+    })
+    .catch(() => false)
+  cadFontLoads.set(font.family, load)
+}
 
 // Map layerId → màu fabric objects
 // Fabric cần stroke/fill trực tiếp — đọc từ layer.color / layer.fillColor
@@ -84,10 +101,11 @@ function canvasToWorld(point, transform) {
   }
 }
 
-function nearestPointOnPolygonEdges(pointer, points) {
+function nearestPointOnEdges(pointer, points, closed = true) {
   if (!points?.length) return null
   let best = null
-  for (let i = 0; i < points.length; i++) {
+  const edgeCount = closed ? points.length : points.length - 1
+  for (let i = 0; i < edgeCount; i++) {
     const a = points[i]
     const b = points[(i + 1) % points.length]
     const abX = b.x - a.x
@@ -105,14 +123,46 @@ function nearestPointOnPolygonEdges(pointer, points) {
 
 /** Tính bounding box tất cả coords trong tất cả lớp */
 function globalBBox(layers) {
-  let xs = [], ys = []
-  layers.forEach(l => l.parcels.forEach(p =>
-    p.coordinates.forEach(c => { xs.push(c.x); ys.push(c.y) })
-  ))
-  if (!xs.length) return null
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  const include = coord => {
+    const x = Number(coord?.x)
+    const y = Number(coord?.y)
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return
+    if (x < minX) minX = x
+    if (x > maxX) maxX = x
+    if (y < minY) minY = y
+    if (y > maxY) maxY = y
+  }
+  layers.forEach(layer => {
+    layer.parcels.forEach(parcel => parcel.coordinates.forEach(include))
+    ;(layer.cadEntities || []).forEach(entity => entity.coordinates.forEach(include))
+    ;(layer.cadTexts || []).forEach(include)
+  })
+  return Number.isFinite(minX) ? { minX, maxX, minY, maxY } : null
+}
+
+function pointBounds(points) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
+  points.forEach(point => {
+    if (point.x < minX) minX = point.x
+    if (point.x > maxX) maxX = point.x
+    if (point.y < minY) minY = point.y
+    if (point.y > maxY) maxY = point.y
+  })
+  return { minX, maxX, minY, maxY }
+}
+
+function gridKey(x, y) {
+  return `${Math.floor(x / CAD_GRID_SIZE)},${Math.floor(y / CAD_GRID_SIZE)}`
+}
+
+function visibleSceneBounds(canvas) {
+  const inverse = fabric.util.invertTransform(canvas.viewportTransform)
+  const topLeft = fabric.util.transformPoint(new fabric.Point(0, 0), inverse)
+  const bottomRight = fabric.util.transformPoint(new fabric.Point(canvas.width, canvas.height), inverse)
   return {
-    minX: Math.min(...xs), maxX: Math.max(...xs),
-    minY: Math.min(...ys), maxY: Math.max(...ys),
+    minX: Math.min(topLeft.x, bottomRight.x), maxX: Math.max(topLeft.x, bottomRight.x),
+    minY: Math.min(topLeft.y, bottomRight.y), maxY: Math.max(topLeft.y, bottomRight.y),
   }
 }
 
@@ -142,6 +192,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   const canvasEl   = useRef(null)   // <canvas> element — truyền vào fabric
   const fc         = useRef(null)   // fabric.Canvas
   const activeToolRef = useRef(tool)
+  const activeLayerIdRef = useRef(activeLayerId)
   const snappingRef = useRef(snappingEnabled)
   const layersRef = useRef(layers)
   const toolEvents = useRef({ down: null, dbl: null, move: null, up: null })
@@ -164,6 +215,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   // Transform cache (để screenToCoord)
   const transformRef = useRef(null)
   const snapMarkerRef = useRef(null)
+  const cadSnapGeometryRef = useRef([])
+  const cadSnapIndexRef = useRef(new Map())
   const viewportFrameRef = useRef(null)
   const pendingViewportRef = useRef(null)
   const viewportSettleRef = useRef(null)
@@ -227,6 +280,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   }
 
   useEffect(() => { activeToolRef.current = tool }, [tool])
+  useEffect(() => { activeLayerIdRef.current = activeLayerId }, [activeLayerId])
   useEffect(() => { snappingRef.current = snappingEnabled }, [snappingEnabled])
   useEffect(() => { layersRef.current = layers }, [layers])
 
@@ -250,11 +304,37 @@ const CanvasEditor = forwardRef(function CanvasEditor(
           }
         })
 
-        const edge = nearestPointOnPolygonEdges(pointer, points)
+        const edge = nearestPointOnEdges(pointer, points)
         if (edge && edge.distance <= edgeThreshold && (!bestEdge || edge.distance < bestEdge.distance)) {
           bestEdge = { ...edge, type: 'edge', layerId: layer.id, parcelId: parcel.id }
         }
       })
+    })
+
+    const nearbyEntities = new Set()
+    const cellRadius = Math.max(1, Math.ceil(Math.max(vertexThreshold, edgeThreshold) / CAD_GRID_SIZE))
+    const cellX = Math.floor(pointer.x / CAD_GRID_SIZE)
+    const cellY = Math.floor(pointer.y / CAD_GRID_SIZE)
+    for (let x = cellX - cellRadius; x <= cellX + cellRadius; x++) {
+      for (let y = cellY - cellRadius; y <= cellY + cellRadius; y++) {
+        ;(cadSnapIndexRef.current.get(`${x},${y}`) || []).forEach(entity => nearbyEntities.add(entity))
+      }
+    }
+    ;(cadSnapIndexRef.current.get('*') || []).forEach(entity => nearbyEntities.add(entity))
+    nearbyEntities.forEach(entity => {
+      if (pointer.x < entity.minX - edgeThreshold || pointer.x > entity.maxX + edgeThreshold ||
+          pointer.y < entity.minY - edgeThreshold || pointer.y > entity.maxY + edgeThreshold) return
+      const points = entity.points
+      points.forEach((point, index) => {
+        const distance = Math.hypot(pointer.x - point.x, pointer.y - point.y)
+        if (distance <= vertexThreshold && (!bestVertex || distance < bestVertex.distance)) {
+          bestVertex = { type: 'vertex', point, distance, layerId: entity.layerId, cadEntityId: entity.id, vertexIndex: index }
+        }
+      })
+      const edge = nearestPointOnEdges(pointer, points, entity.closed)
+      if (edge && edge.distance <= edgeThreshold && (!bestEdge || edge.distance < bestEdge.distance)) {
+        bestEdge = { ...edge, type: 'edge', layerId: entity.layerId, cadEntityId: entity.id }
+      }
     })
 
     return bestVertex || bestEdge
@@ -319,7 +399,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       if (!tr || isPanning.current) return
       const pointer = canvas.getPointer(opt.e)
       setCursorCoord(canvasToWorld(pointer, tr))
-      if (['draw', 'select', 'addvertex'].includes(activeToolRef.current)) {
+      if (['draw', 'select', 'addvertex', 'move'].includes(activeToolRef.current)) {
         showSnapMarker(getSnapResult(pointer))
       }
     })
@@ -446,6 +526,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       boxselect: 'crosshair',
       addvertex: 'crosshair',
       deletevertex: 'not-allowed',
+      move:      'move',
     }
     canvas.setCursor(cursorMap[tool] || 'default')
     canvas.skipTargetFind = tool === 'pan' || tool === 'draw' || tool === 'measure' || tool === 'boxselect'
@@ -470,7 +551,9 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     } else if (tool === 'pick') {
       setStatus('Click vào vùng để chọn | [B] Quét chọn nhiều vùng')
     } else if (tool === 'select') {
-      setStatus('Kéo đỉnh để điều chỉnh vị trí')
+      setStatus('Click chọn vùng, sau đó kéo đỉnh để điều chỉnh vị trí')
+    } else if (tool === 'move') {
+      setStatus('Click chọn vùng, sau đó kéo vùng để di chuyển toàn bộ')
     } else if (tool === 'addvertex') {
       setStatus('Click gần cạnh của vùng đang chọn để chèn đỉnh mới')
     } else if (tool === 'deletevertex') {
@@ -660,6 +743,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   function renderAllLayers(layerList, selParcelId) {
     const canvas = fc.current
     if (!canvas) return
+    const hasCadReference = layerList.some(layer => layer.visible && ((layer.cadEntities?.length || 0) > 0 || (layer.cadTexts?.length || 0) > 0))
+    canvas.getObjects().forEach(object => {
+      if (object.__isGrid) object.visible = !transparentBackground && !hasCadReference
+    })
 
     // Xóa tất cả object trừ grid
     const toRemove = canvas.getObjects().filter(o => !o.__isGrid)
@@ -676,9 +763,40 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
     // Render theo thứ tự order (thấp → cao)
     const sorted = [...layerList].sort((a, b) => a.order - b.order)
+    cadSnapGeometryRef.current = sorted.flatMap(layer => !layer.visible ? [] : (layer.cadEntities || []).map(entity => {
+      const points = entity.coordinates.map(coord => worldToCanvas(coord, transformRef.current))
+      const bounds = pointBounds(points)
+      return {
+        id: entity.id, layerId: layer.id, closed: entity.closed, points,
+        ...bounds,
+      }
+    }).filter(entity => entity.points.length >= 2))
+    const snapIndex = new Map()
+    cadSnapGeometryRef.current.forEach(entity => {
+      const minCellX = Math.floor(entity.minX / CAD_GRID_SIZE)
+      const maxCellX = Math.floor(entity.maxX / CAD_GRID_SIZE)
+      const minCellY = Math.floor(entity.minY / CAD_GRID_SIZE)
+      const maxCellY = Math.floor(entity.maxY / CAD_GRID_SIZE)
+      const cellCount = (maxCellX - minCellX + 1) * (maxCellY - minCellY + 1)
+      if (cellCount > 256) {
+        if (!snapIndex.has('*')) snapIndex.set('*', [])
+        snapIndex.get('*').push(entity)
+        return
+      }
+      for (let x = minCellX; x <= maxCellX; x++) {
+        for (let y = minCellY; y <= maxCellY; y++) {
+          const key = `${x},${y}`
+          if (!snapIndex.has(key)) snapIndex.set(key, [])
+          snapIndex.get(key).push(entity)
+        }
+      }
+    })
+    cadSnapIndexRef.current = snapIndex
 
     sorted.forEach(layer => {
       if (!layer.visible) return
+      renderCadGeometryLayer(canvas, layer)
+      renderCadTextLayer(canvas, layer)
       layer.parcels.forEach(parcel => {
         const isSelected      = parcel.id === selParcelId
         const isMultiSelected = multiSelectedIds.includes(parcel.id)
@@ -688,6 +806,105 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
     canvas.renderAll()
     requestAnimationFrame(emitViewportChange)
+  }
+
+  function renderCadGeometryLayer(canvas, layer) {
+    const tr = transformRef.current
+    if (!tr) return
+    const prepared = (layer.cadEntities || []).map(entity => {
+      const points = (entity.coordinates || []).map(coord => worldToCanvas(coord, tr))
+      const pattern = (entity.lineTypePattern || []).map(length => {
+        const scaled = Math.abs(length) * tr.scale * (entity.lineTypeScale || 1)
+        return length === 0 ? 1 / (canvas.getZoom() || 1) : Math.max(scaled, 1 / (canvas.getZoom() || 1))
+      })
+      return points.length < 2 ? null : { points, closed: entity.closed, pattern, ...pointBounds(points) }
+    }).filter(Boolean)
+    if (!prepared.length) return
+    const object = new fabric.Object({
+      left: 0, top: 0, width: canvas.width, height: canvas.height,
+      originX: 'left', originY: 'top', selectable: false, evented: false,
+      opacity: layer.opacity ?? 0.85, objectCaching: false,
+    })
+    object._render = context => {
+      const visible = visibleSceneBounds(canvas)
+      context.save()
+      context.translate(-object.width / 2, -object.height / 2)
+      context.strokeStyle = layer.color
+      context.lineWidth = 1.15 / (canvas.getZoom() || 1)
+      context.lineJoin = 'round'
+      context.lineCap = 'round'
+      const visibleEntities = prepared.filter(entity => !(entity.maxX < visible.minX || entity.minX > visible.maxX || entity.maxY < visible.minY || entity.minY > visible.maxY))
+      const groups = new Map()
+      visibleEntities.forEach(entity => {
+        const key = entity.pattern.join(',')
+        if (!groups.has(key)) groups.set(key, [])
+        groups.get(key).push(entity)
+      })
+      groups.forEach((entities, key) => {
+        context.setLineDash(key ? key.split(',').map(Number) : [])
+        context.beginPath()
+        entities.forEach(entity => {
+          context.moveTo(entity.points[0].x, entity.points[0].y)
+          for (let index = 1; index < entity.points.length; index++) context.lineTo(entity.points[index].x, entity.points[index].y)
+          if (entity.closed) context.closePath()
+        })
+        context.stroke()
+      })
+      context.setLineDash([])
+      context.restore()
+    }
+    object.__id = `cadlayer_${layer.id}`
+    canvas.add(object)
+  }
+
+  function renderCadTextLayer(canvas, layer) {
+    const tr = transformRef.current
+    const texts = layer.cadTexts || []
+    if (!tr || !texts.length) return
+    const prepared = texts.filter(text => text.text).map(text => {
+      const attachment = Number(text.attachment) || 1
+      const column = (attachment - 1) % 3
+      const row = Math.floor((attachment - 1) / 3)
+      return {
+        ...text,
+        point: worldToCanvas(text, tr),
+        fontSize: Math.max(0.5, Number(text.textHeight || 2.5) * tr.scale * TIMES_CAD_HEIGHT_FACTOR),
+        align: text.sourceType === 'MTEXT' ? ['left', 'center', 'right'][column] : text.halign === 1 || text.halign === 4 ? 'center' : text.halign === 2 ? 'right' : 'left',
+        baseline: text.sourceType === 'MTEXT' ? ['top', 'middle', 'bottom'][row] : text.valign === 3 ? 'top' : text.valign === 2 ? 'middle' : text.valign === 1 ? 'bottom' : 'alphabetic',
+      }
+    })
+    const object = new fabric.Object({
+      left: 0, top: 0, width: canvas.width, height: canvas.height,
+      originX: 'left', originY: 'top', selectable: false, evented: false,
+      opacity: layer.opacity ?? 0.9, objectCaching: false,
+    })
+    object._render = context => {
+      context.save()
+      context.translate(-object.width / 2, -object.height / 2)
+      context.fillStyle = layer.color
+      const zoom = canvas.getZoom() || 1
+      const visible = visibleSceneBounds(canvas)
+      prepared.forEach(text => {
+        if (text.fontSize * zoom < 1.5) return
+        if (text.point.x < visible.minX - text.fontSize * 20 || text.point.x > visible.maxX + text.fontSize * 20 ||
+            text.point.y < visible.minY - text.fontSize * 4 || text.point.y > visible.maxY + text.fontSize * 4) return
+        context.save()
+        context.translate(text.point.x, text.point.y)
+        context.rotate(-(Number(text.rotation) || 0))
+        context.translate(0, text.fontSize * TIMES_CAD_BASELINE_OFFSET)
+        context.scale(Number(text.xScale) || 1, 1)
+        context.font = `${text.fontSize}px "Times New Roman"`
+        context.textAlign = text.align
+        context.textBaseline = text.baseline
+        String(text.text).split('\n').forEach((line, index) => context.fillText(line, 0, index * text.fontSize * 1.15))
+        context.restore()
+      })
+      context.restore()
+    }
+    object.__id = `cadtextlayer_${layer.id}`
+    canvas.add(object)
+    const fonts = new Map(prepared.filter(text => text.font?.family).map(text => [text.font.family, text.font]))
+    fonts.forEach(font => ensureCadFont(font, () => canvas.requestRenderAll()))
   }
 
   function renderParcel(canvas, layer, parcel, isSelected, isMultiSelected = false) {
@@ -708,15 +925,18 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
     // ── Polygon ──
     const polyFill = fillColor.startsWith('#') ? fillColor : `#${fillColor}`
+    const canMove = tool === 'move' && isSelected && !layer.locked
     const poly = new fabric.Polygon(pts.map(p => ({ x: p.x, y: p.y })), {
       fill: polyFill,
       stroke: strokeColor,
       strokeWidth: strokeW,
-      selectable: false,
+      selectable: canMove,
       evented: true,
+      hasControls: false,
+      hasBorders: canMove,
       opacity,
       objectCaching: false,
-      hoverCursor: (tool === 'pick' || tool === 'boxselect') ? 'pointer' : 'default',
+      hoverCursor: canMove ? 'move' : ['pick', 'select', 'move', 'addvertex', 'deletevertex'].includes(tool) ? 'pointer' : 'default',
     })
     const polyId = `poly_${parcel.id}`
     poly.__id = polyId
@@ -725,14 +945,17 @@ const CanvasEditor = forwardRef(function CanvasEditor(
 
     // Click polygon → select
     poly.on('mousedown', opt => {
-      if (tool === 'pick') {
+      if (['pick', 'select', 'move', 'addvertex', 'deletevertex'].includes(tool) && !isSelected) {
         onParcelSelected?.(layer.id, parcel.id)
-      } else if (tool === 'addvertex' && isSelected && !layer.locked) {
+        if (tool !== 'pick') setStatus(layer.locked ? 'Vùng thuộc lớp đang khóa, chỉ có thể xem' : 'Đã chọn vùng để biên tập')
+        return
+      }
+      if (tool === 'addvertex' && isSelected && !layer.locked) {
         const pointer = canvas.getPointer(opt.e)
         const snap = getSnapResult(pointer)
         const nearest = snap?.parcelId === parcel.id && snap.type === 'edge'
           ? snap
-          : nearestPointOnPolygonEdges(pointer, pts)
+          : nearestPointOnEdges(pointer, pts)
         const threshold = 14 / (canvas.getZoom() || 1)
         if (!nearest || nearest.distance > threshold) {
           setStatus('Hãy click gần một cạnh của vùng đang chọn')
@@ -755,6 +978,28 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         setStatus(`Đã chèn đỉnh mới sau điểm ${nearest.edgeIndex + 1}`)
       }
     })
+
+    if (canMove) {
+      const initialLeft = poly.left
+      const initialTop = poly.top
+      poly.on('moving', () => {
+        const dx = poly.left - initialLeft
+        const dy = poly.top - initialTop
+        setStatus(`Đang di chuyển: ΔX ${(-dy / tr.scale).toFixed(3)} m · ΔY ${(dx / tr.scale).toFixed(3)} m`)
+      })
+      poly.on('modified', () => {
+        const dx = poly.left - initialLeft
+        const dy = poly.top - initialTop
+        if (Math.abs(dx) < 1e-9 && Math.abs(dy) < 1e-9) return
+        const nextCoords = parcel.coordinates.map(coord => ({
+          ...coord,
+          x: coord.x - dy / tr.scale,
+          y: coord.y + dx / tr.scale,
+        }))
+        onVertexMoved?.(layer.id, parcel.id, nextCoords)
+        setStatus(`Đã di chuyển vùng: ΔX ${(-dy / tr.scale).toFixed(3)} m · ΔY ${(dx / tr.scale).toFixed(3)} m`)
+      })
+    }
 
     // ── Edge labels (chiều dài cạnh) ──
     const n = parcel.coordinates.length
@@ -874,7 +1119,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         })
 
         // Moved → commit
-        if (tool === 'select') vert.on('moved', () => {
+        if (tool === 'select') vert.on('modified', () => {
           const center = vert.getCenterPoint()
           const snap = getSnapResult(center, { exclude: { parcelId: parcel.id, vertexIndex: i } })
           const scenePoint = snap?.point || center
@@ -903,12 +1148,22 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   function handleDrawClick(opt) {
     if (isPanning.current) return
     const canvas = fc.current
+    const currentLayerId = activeLayerIdRef.current
+    const targetLayer = layersRef.current.find(layer => layer.id === currentLayerId)
+    if (!targetLayer) {
+      setStatus('Hãy chọn một lớp hiện hành trước khi tạo vùng')
+      return
+    }
+    if (targetLayer.locked) {
+      setStatus('Không thể tạo vùng: lớp hiện hành đang bị khóa')
+      return
+    }
     const ptr = getCanvasPointer(opt)
     const state = drawState.current
 
     if (!state.active) {
       state.active  = true
-      state.layerId = activeLayerId
+      state.layerId = currentLayerId
       state.pts     = []
       state.previewPts = []
     }
@@ -1009,7 +1264,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       return { point: String(i + 1), x: vn.x, y: vn.y }
     })
 
-    const layerId = state.layerId || activeLayerId
+    const layerId = state.layerId || activeLayerIdRef.current
     onParcelDrawn?.(layerId, coordsList)
 
     const area = calculateArea(coordsList)
@@ -1324,6 +1579,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const l = new fabric.Line([x, -extent, x, extent], {
         stroke: axis ? 'rgba(76,110,245,0.32)' : major ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
         strokeWidth: axis ? 1.5 : 1,
+        strokeUniform: true,
         selectable: false, evented: false,
       })
       l.__isGrid = true
@@ -1336,6 +1592,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const l = new fabric.Line([-extent, y, extent, y], {
         stroke: axis ? 'rgba(76,110,245,0.32)' : major ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.03)',
         strokeWidth: axis ? 1.5 : 1,
+        strokeUniform: true,
         selectable: false, evented: false,
       })
       l.__isGrid = true

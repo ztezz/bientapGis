@@ -37,6 +37,7 @@ export default function LayerPanel({
   selected,
   onAddLayer,
   onRemoveLayer,
+  onRemoveAllLayers,
   onUpdateLayer,
   onReorderLayers,
   onSelectParcel,
@@ -109,13 +110,16 @@ export default function LayerPanel({
         <span className="lp-title">Quản lý lớp</span>
         <div className="lp-header-actions">
           <span className="lp-count">{layers.length} lớp · {layers.reduce((s, l) => s + l.parcels.length, 0)} vùng</span>
-          <button
-            className="lp-add-btn"
-            onClick={() => setShowAddForm(v => !v)}
-            title="Thêm lớp mới"
-          >
-            {IC.add} Thêm lớp
-          </button>
+          <div className="lp-header-buttons">
+            <button className="lp-clear-btn" onClick={onRemoveAllLayers} title="Xóa toàn bộ lớp và dữ liệu">Xóa tất cả</button>
+            <button
+              className="lp-add-btn"
+              onClick={() => setShowAddForm(v => !v)}
+              title="Thêm lớp mới"
+            >
+              {IC.add} Thêm lớp
+            </button>
+          </div>
         </div>
       </div>
 
@@ -174,7 +178,7 @@ export default function LayerPanel({
               {/* Layer row */}
               <div
                 className="lp-layer-row"
-                onClick={() => { onSetActiveLayer?.(layer.id); toggleExpand(layer.id) }}
+                onClick={() => { if (layer.type !== 'reference' && !layer.locked) onSetActiveLayer?.(layer.id); toggleExpand(layer.id) }}
               >
                 {/* Drag handle */}
                 <span className="lp-drag-handle" title="Kéo để sắp xếp">{IC.drag}</span>
@@ -212,7 +216,7 @@ export default function LayerPanel({
                   </span>
                 )}
 
-                <span className="lp-parcel-count">{layer.parcels.length}</span>
+                <span className="lp-parcel-count">{layer.type === 'reference' ? `${(layer.cadEntities?.length || 0) + (layer.cadTexts?.length || 0)} CAD` : layer.parcels.length}</span>
 
                 {/* Expand arrow */}
                 <span className="lp-expand-icon">
@@ -239,7 +243,7 @@ export default function LayerPanel({
                     className="lp-icon-btn lp-icon-btn--danger"
                     onClick={() => {
                       onConfirm?.(
-                        { title: `Xóa lớp "${layer.name}"?`, message: `Toàn bộ ${layer.parcels.length} vùng trong lớp cũng sẽ bị xóa khỏi bản vẽ.` },
+                        { title: `Xóa lớp "${layer.name}"?`, message: layer.type === 'reference' ? `Toàn bộ ${layer.cadEntities?.length || 0} đối tượng CAD tham chiếu sẽ bị xóa.` : `Toàn bộ ${layer.parcels.length} vùng trong lớp cũng sẽ bị xóa khỏi bản vẽ.` },
                         () => onRemoveLayer(layer.id),
                       )
                     }}
@@ -285,7 +289,7 @@ export default function LayerPanel({
                 <div className="lp-parcel-list">
                   {layer.parcels.length === 0 && (
                     <div className="lp-parcel-empty">
-                      {layer.locked ? '🔒 Lớp đang bị khóa' : 'Chưa có vùng — chọn tool vẽ để bắt đầu'}
+                      {layer.type === 'reference' ? `${layer.cadEntities?.length || 0} hình · ${layer.cadTexts?.length || 0} chữ CAD tham chiếu · có thể bắt điểm` : layer.locked ? '🔒 Lớp đang bị khóa' : 'Chưa có vùng — chọn tool vẽ để bắt đầu'}
                     </div>
                   )}
                   {layer.parcels.map((parcel, pIdx) => {

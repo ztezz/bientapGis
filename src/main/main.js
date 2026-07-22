@@ -1,7 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const path = require('path')
 const fs = require('fs')
-const os = require('os')
+const { readDWG } = require('./dwgReader')
 
 const isDev = process.env.NODE_ENV === 'development' || !app.isPackaged
 
@@ -15,6 +15,7 @@ function createWindow() {
     minHeight: 700,
     title: 'VN-LandEditor - Biên tập thửa đất VN-2000',
     backgroundColor: '#1a1d2e',
+    frame: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -23,7 +24,6 @@ function createWindow() {
       webSecurity: false // Cho phép load file:// trong dev
     },
     icon: path.join(__dirname, '../../public/icon.png'),
-    titleBarStyle: 'default',
     show: false
   })
 
@@ -41,6 +41,10 @@ function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null
   })
+
+  const sendMaximizedState = () => mainWindow?.webContents.send('window:maximizedChanged', mainWindow.isMaximized())
+  mainWindow.on('maximize', sendMaximizedState)
+  mainWindow.on('unmaximize', sendMaximizedState)
 }
 
 app.whenReady().then(() => {
@@ -58,6 +62,55 @@ app.on('window-all-closed', () => {
 // ============================================================
 // IPC HANDLERS - Giao tiếp Main <-> Renderer
 // ============================================================
+
+ipcMain.handle('window:minimize', event => {
+  BrowserWindow.fromWebContents(event.sender)?.minimize()
+})
+
+ipcMain.handle('window:toggleMaximize', event => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (!window) return false
+  window.isMaximized() ? window.unmaximize() : window.maximize()
+  return window.isMaximized()
+})
+
+ipcMain.handle('window:close', event => {
+  BrowserWindow.fromWebContents(event.sender)?.close()
+})
+
+ipcMain.handle('window:isMaximized', event =>
+  BrowserWindow.fromWebContents(event.sender)?.isMaximized() || false)
+
+ipcMain.handle('dialog:openDWG', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Mở bản vẽ AutoCAD DWG',
+    filters: [{ name: 'AutoCAD DWG', extensions: ['dwg'] }],
+    properties: ['openFile'],
+  })
+  if (canceled || !filePaths.length) return { success: false, canceled: true }
+
+  const sourcePath = filePaths[0]
+  try {
+    const drawing = await readDWG(app, fs.readFileSync(sourcePath), sourcePath)
+    return {
+      success: true,
+      filename: path.basename(sourcePath),
+      drawing,
+    }
+  } catch (error) {
+    return { success: false, code: 'DWG_READ_FAILED', error: error.message }
+  }
+
+  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    if (level >= 2) console.error(`[Renderer] ${message} (${sourceId}:${line})`)
+  })
+  mainWindow.webContents.on('did-fail-load', (event, code, description, url) => {
+    console.error(`[Renderer] Load failed ${code}: ${description} (${url})`)
+  })
+  mainWindow.webContents.on('render-process-gone', (event, details) => {
+    console.error('[Renderer] Process gone:', details)
+  })
+})
 
 /**
  * Mở hộp thoại chọn file ảnh cho OCR

@@ -49,6 +49,7 @@ const TOOL_GROUPS = [
     id: 'editing', label: 'Biên tập', tools: [
       { id: 'draw', icon: '✏', label: 'Vẽ vùng', shortcut: 'D', description: 'Vẽ polygon thửa đất mới' },
       { id: 'select', icon: '↔', label: 'Sửa đỉnh', shortcut: 'S', description: 'Kéo các đỉnh của thửa đang chọn' },
+      { id: 'move', icon: '✥', label: 'Di chuyển vùng', shortcut: 'G', description: 'Kéo toàn bộ vùng sang vị trí mới' },
       { id: 'addvertex', icon: '＋', label: 'Thêm đỉnh', shortcut: 'A', description: 'Chèn điểm mới lên cạnh gần nhất' },
       { id: 'deletevertex', icon: '−', label: 'Xóa đỉnh', shortcut: 'X', description: 'Xóa đỉnh, giữ tối thiểu ba điểm' },
     ]
@@ -104,6 +105,7 @@ export default function App() {
   // Multi-select: [{ layerId, parcelId }]
   const [multiSelected,  setMultiSelected]  = useState([])
   const [confirmation,   setConfirmation]   = useState(null)
+  const [windowMaximized, setWindowMaximized] = useState(false)
   const multiSelectedIds = useMemo(() => multiSelected.map(item => item.parcelId), [multiSelected])
 
   const requestConfirmation = useCallback((options, action) => {
@@ -117,6 +119,11 @@ export default function App() {
 
   // Khởi động: load AI settings từ file
   useEffect(() => { loadSettingsFromFile() }, [])
+  useEffect(() => {
+    const api = window.electronAPI
+    api?.isWindowMaximized?.().then(setWindowMaximized)
+    return api?.onWindowMaximizedChanged?.(setWindowMaximized)
+  }, [])
   useEffect(() => { localStorage.setItem('vn_basemap_enabled', String(basemapEnabled)) }, [basemapEnabled])
   useEffect(() => { localStorage.setItem('vn_basemap_source', basemapSource); setBasemapError('') }, [basemapSource])
   useEffect(() => { localStorage.setItem('vn_basemap_opacity', String(basemapOpacity)) }, [basemapOpacity])
@@ -188,10 +195,12 @@ export default function App() {
   // ── Handlers ────────────────────────────────────────────
 
   const handleParcelDrawn = useCallback((layerId, coordinates) => {
+    const targetLayer = layers.find(layer => layer.id === layerId)
+    if (!targetLayer || targetLayer.locked) return
     const id = addParcel(layerId, coordinates)
     if (id) selectParcel(layerId, id)
     setTool('pick')
-  }, [addParcel, selectParcel])
+  }, [layers, addParcel, selectParcel])
 
   const handleParcelSelected = useCallback((layerId, parcelId) => {
     selectParcel(layerId, parcelId)
@@ -267,7 +276,7 @@ export default function App() {
           </button>
           <button className="top-btn" onClick={() => setShowSearch(true)} title="Tra cứu thửa đất [Ctrl+F]">⌕ Tra cứu</button>
           <button className="top-btn" disabled={!selected?.parcelId} onClick={() => setShowReport(true)} title="Lập hồ sơ kỹ thuật cho thửa đang chọn">▤ Hồ sơ</button>
-          <button className="top-btn" onClick={() => setShowImport(true)} title="Import JSON, GeoJSON hoặc CSV">⬆ Import GIS</button>
+          <button className="top-btn" onClick={() => setShowImport(true)} title="Import JSON, GeoJSON, CSV, DXF hoặc DWG">⬆ Import GIS</button>
           <button className="top-btn top-btn--primary" onClick={() => setShowExport(true)} title="Xuất JSON, GeoJSON hoặc CSV">⬇ Xuất GIS</button>
 
           {/* Settings */}
@@ -276,6 +285,13 @@ export default function App() {
             onClick={() => setShowSettings(true)}
             title="Cài đặt AI"
           >⚙</button>
+          <div className="window-controls">
+            <button onClick={() => window.electronAPI?.minimizeWindow?.()} title="Thu nhỏ" aria-label="Thu nhỏ">─</button>
+            <button onClick={() => window.electronAPI?.toggleMaximizeWindow?.()} title={windowMaximized ? 'Khôi phục' : 'Phóng to'} aria-label={windowMaximized ? 'Khôi phục' : 'Phóng to'}>
+              {windowMaximized ? '❐' : '□'}
+            </button>
+            <button className="window-control-close" onClick={() => window.electronAPI?.closeWindow?.()} title="Đóng" aria-label="Đóng">×</button>
+          </div>
           </div>
         </div>
 
@@ -423,6 +439,26 @@ export default function App() {
                 onSetActiveLayer={setActiveLayerId}
                 onAddLayer={addLayer}
                 onRemoveLayer={removeLayer}
+                onRemoveAllLayers={() => {
+                  const cadCount = layers.reduce((sum, layer) => sum + (layer.cadEntities?.length || 0) + (layer.cadTexts?.length || 0), 0)
+                  const parcelCount = layers.reduce((sum, layer) => sum + layer.parcels.length, 0)
+                  requestConfirmation(
+                    {
+                      title: 'Xóa tất cả các lớp?',
+                      message: `Thao tác sẽ xóa ${layers.length} lớp, ${parcelCount} vùng và ${cadCount} đối tượng CAD. Bạn có thể hoàn tác bằng Ctrl+Z.`,
+                      confirmLabel: 'Xóa tất cả',
+                      tone: 'danger',
+                    },
+                    () => {
+                      resetStore()
+                      clearSelection()
+                      setMultiSelected([])
+                      setRightTab('layers')
+                      setTool('pick')
+                      requestAnimationFrame(() => setActiveLayerId(getActiveLayerId()))
+                    },
+                  )
+                }}
                 onUpdateLayer={updateLayer}
                 onReorderLayers={reorderLayers}
                 onSelectParcel={handleParcelSelected}
@@ -574,10 +610,19 @@ export default function App() {
         open={showImport}
         provinceKey={province}
         onClose={() => setShowImport(false)}
-        onAppend={(importedLayers) => appendLayers(importedLayers)}
+        onAppend={(importedLayers) => {
+          const importedLayerIds = appendLayers(importedLayers)
+          const parcelLayerIndex = importedLayers.findIndex(layer => layer.type === 'parcel' && !layer.locked)
+          if (importedLayerIds[parcelLayerIndex >= 0 ? parcelLayerIndex : 0]) setActiveLayerId(importedLayerIds[parcelLayerIndex >= 0 ? parcelLayerIndex : 0])
+          setMultiSelected([])
+          clearSelection()
+          requestAnimationFrame(() => canvasRef.current?.fitToView())
+        }}
         onReplace={(project) => {
           canvasRef.current?.resetWorldTransform()
           importJSON(project)
+          const parcelLayer = project.layers.find(layer => layer.type === 'parcel' && !layer.locked)
+          if (parcelLayer) setActiveLayerId(parcelLayer.id)
           setMultiSelected([])
           clearSelection()
         }}

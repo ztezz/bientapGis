@@ -145,7 +145,10 @@ class LayerStore {
     try {
       const previous = localStorage.getItem(STORAGE_KEY)
       if (previous) localStorage.setItem(STORAGE_BACKUP_KEY, previous)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(this._layers))
+      // Large CAD references can exceed localStorage quota. Persist editable
+      // parcel layers; DWG references can be reopened from their source file.
+      const persistentLayers = this._layers.filter(layer => layer.type !== 'reference')
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(persistentLayers))
       this._lastSavedAt = now()
     } catch (e) {
       console.warn('[LayerStore] save failed:', e)
@@ -206,7 +209,7 @@ class LayerStore {
   /** Snapshot bất biến để React có thể dùng */
   snapshot() {
     return {
-      layers:   JSON.parse(JSON.stringify(this._layers)),
+      layers:   this._layers,
       selected: this._selected ? { ...this._selected } : null,
       canUndo: this._undoStack.length > 0,
       canRedo: this._redoStack.length > 0,
@@ -301,7 +304,7 @@ class LayerStore {
 
   addParcel(layerId, coordinates, attributes = {}) {
     const layer = this._getLayer(layerId)
-    if (!layer) return null
+    if (!layer || layer.locked) return null
     this._recordHistory()
     const geom = computeParcelGeom(coordinates)
     const parcel = {
@@ -322,8 +325,10 @@ class LayerStore {
   }
 
   updateParcelCoords(layerId, parcelId, coordinates) {
+    const layer = this._getLayer(layerId)
+    if (!layer || layer.locked) return false
     const parcel = this._getParcel(layerId, parcelId)
-    if (!parcel) return
+    if (!parcel) return false
     this._recordHistory()
     const geom = computeParcelGeom(coordinates)
     parcel.coordinates  = JSON.parse(JSON.stringify(coordinates))
@@ -332,6 +337,7 @@ class LayerStore {
     parcel.updatedAt    = now()
     this._save()
     this._notify()
+    return true
   }
 
   updateParcelAttributes(layerId, parcelId, attrs) {
@@ -450,10 +456,13 @@ class LayerStore {
       layers: this._layers.map(layer => ({
         id:       layer.id,
         name:     layer.name,
+        type:     layer.type,
         color:    layer.color,
         visible:  layer.visible,
         locked:   layer.locked,
         opacity:  layer.opacity,
+        cadEntities: JSON.parse(JSON.stringify(layer.cadEntities || [])),
+        cadTexts: JSON.parse(JSON.stringify(layer.cadTexts || [])),
         parcels:  layer.parcels.map(p => ({
           id:          p.id,
           attributes:  p.attributes,
@@ -471,48 +480,57 @@ class LayerStore {
   importJSON(json) {
     if (!json?.layers) throw new Error('File JSON không hợp lệ')
     this._recordHistory()
-    this._layers  = json.layers.map((l, i) => ({
-      id:        l.id || uuid(),
-      name:      l.name || `Lớp ${i + 1}`,
-      type:      'parcel',
-      visible:   l.visible !== false,
-      locked:    l.locked  || false,
-      opacity:   l.opacity ?? 1,
-      color:     l.color   || DEFAULT_LAYER_COLOR,
-      fillColor: hexToFill(l.color || DEFAULT_LAYER_COLOR),
-      order:     i,
-      parcels:   (l.parcels || []).map(p => ({
-        id:          p.id || uuid(),
-        layerId:     l.id,
-        coordinates: p.coordinates || [],
-        attributes:  { ...DEFAULT_PARCEL_ATTRS, ...p.attributes },
-        area_m2:     p.area_m2     || 0,
-        perimeter_m: p.perimeter_m || 0,
-        ...computeParcelGeom(p.coordinates || []),
-        selected:    false,
-        createdAt:   p.createdAt   || now(),
-        updatedAt:   p.updatedAt   || now(),
-      }))
-    }))
+    this._layers  = json.layers.map((l, i) => {
+      const layerId = l.id || uuid()
+      return {
+        id:        layerId,
+        name:      l.name || `Lớp ${i + 1}`,
+        type:      l.type || 'parcel',
+        visible:   l.visible !== false,
+        locked:    l.locked  || false,
+        opacity:   l.opacity ?? 1,
+        color:     l.color   || DEFAULT_LAYER_COLOR,
+        fillColor: hexToFill(l.color || DEFAULT_LAYER_COLOR),
+        order:     i,
+        cadEntities: JSON.parse(JSON.stringify(l.cadEntities || [])),
+        cadTexts: JSON.parse(JSON.stringify(l.cadTexts || [])),
+        parcels:   (l.parcels || []).map(p => ({
+          id:          p.id || uuid(),
+          layerId,
+          coordinates: p.coordinates || [],
+          attributes:  { ...DEFAULT_PARCEL_ATTRS, ...p.attributes },
+          area_m2:     p.area_m2     || 0,
+          perimeter_m: p.perimeter_m || 0,
+          ...computeParcelGeom(p.coordinates || []),
+          selected:    false,
+          createdAt:   p.createdAt   || now(),
+          updatedAt:   p.updatedAt   || now(),
+        }))
+      }
+    })
     this._selected = null
     this._save()
     this._notify()
   }
 
   appendLayers(importedLayers) {
-    if (!Array.isArray(importedLayers) || !importedLayers.length) return 0
+    if (!Array.isArray(importedLayers) || !importedLayers.length) return []
     this._recordHistory()
     const startOrder = this._layers.length
+    const importedLayerIds = []
     importedLayers.forEach((source, index) => {
       const layerId = uuid()
+      importedLayerIds.push(layerId)
       const color = source.color || LAYER_COLORS[(startOrder + index) % LAYER_COLORS.length]
       this._layers.push({
         ...source,
         id: layerId,
         name: source.name || `Lớp import ${index + 1}`,
-        type: 'parcel', visible: source.visible !== false, locked: false,
+        type: source.type || 'parcel', visible: source.visible !== false, locked: source.locked || false,
         opacity: source.opacity ?? 1, color, fillColor: hexToFill(color),
         order: startOrder + index,
+        cadEntities: JSON.parse(JSON.stringify(source.cadEntities || [])),
+        cadTexts: JSON.parse(JSON.stringify(source.cadTexts || [])),
         parcels: (source.parcels || []).map(parcel => ({
           ...parcel,
           id: uuid(),
@@ -527,7 +545,7 @@ class LayerStore {
     })
     this._save()
     this._notify()
-    return importedLayers.length
+    return importedLayerIds
   }
 
   /** Reset toàn bộ về mặc định */

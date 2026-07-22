@@ -58,7 +58,14 @@ html, body, #root {
   justify-content: space-between;
   gap: 12px;
   flex-shrink: 0;
+  -webkit-app-region: drag;
 }
+
+.top-bar-main button,
+.top-bar-main select,
+.top-bar-main input,
+.top-bar-main label,
+.top-bar-main a { -webkit-app-region: no-drag; }
 
 .top-bar-left {
   display: flex;
@@ -87,6 +94,27 @@ html, body, #root {
   border-radius: 4px;
   padding: 1px 6px;
 }
+
+.window-controls {
+  align-self: stretch;
+  display: flex;
+  margin: 0 -12px 0 2px;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  width: 46px;
+  height: 42px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #94a3b8;
+  font: 16px/1 'Segoe UI Symbol', 'Segoe UI', sans-serif;
+  cursor: default;
+}
+
+.window-controls button:hover { background: rgba(255,255,255,.08); color: #fff; }
+.window-controls .window-control-close:hover { background: #c42b1c; color: #fff; }
 
 /* ── Toolbar ── */
 .toolbar {
