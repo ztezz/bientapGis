@@ -83,7 +83,7 @@ const SUGGESTED_MODELS = [
 // COMPONENT CHÍNH
 // ============================================================
 
-export default function SettingsModal({ open, onClose }) {
+export default function SettingsModal({ open, onClose, onConfirm }) {
   const [form, setForm]           = useState(() => getSettings())
   const [testStatus, setTestStatus] = useState(null)   // null | 'testing' | 'ok' | 'error'
   const [testMsg, setTestMsg]     = useState('')
@@ -175,12 +175,21 @@ export default function SettingsModal({ open, onClose }) {
   }
 
   const handleReset = () => {
-    if (!window.confirm('Reset về cài đặt mặc định?')) return
-    const def = resetSettings()
-    setForm(def)
-    setSaved(false)
-    setErrors({})
-    setTestStatus(null)
+    onConfirm?.(
+      {
+        title: 'Khôi phục cài đặt mặc định?',
+        message: 'Endpoint, model, API key và các tham số AI hiện tại sẽ được thay bằng cấu hình mặc định.',
+        confirmLabel: 'Khôi phục',
+        tone: 'warning',
+      },
+      () => {
+        const def = resetSettings()
+        setForm(def)
+        setSaved(false)
+        setErrors({})
+        setTestStatus(null)
+      },
+    )
   }
 
   // Fallback models management

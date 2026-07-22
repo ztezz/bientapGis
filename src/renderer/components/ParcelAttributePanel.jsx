@@ -69,6 +69,7 @@ export default function ParcelAttributePanel({
   onRemove,     // (layerId, parcelId) => void
   onDuplicate,  // (layerId, parcelId) => void
   onEditGeometry,
+  onConfirm,
 }) {
   const [form,    setForm]    = useState({ ...DEFAULT_PARCEL_ATTRS })
   const [dirty,   setDirty]   = useState(false)
@@ -211,6 +212,26 @@ export default function ParcelAttributePanel({
                 placeholder={fd.placeholder}
                 rows={2}
               />
+            ) : fd.key === 'dientich' ? (
+              <div className="pap-area-input">
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  className={`pap-input ${errors[fd.key] ? 'pap-input--error' : ''}`}
+                  value={form[fd.key] || ''}
+                  onChange={e => set(fd.key, e.target.value)}
+                  placeholder={fd.placeholder}
+                />
+                <button
+                  type="button"
+                  className="pap-auto-area-btn"
+                  onClick={() => set('dientich', Number(parcel.area_m2.toFixed(2)))}
+                  title="Lấy diện tích tính từ tọa độ của vùng"
+                >
+                  <span>⌁</span> Tự tính
+                </button>
+              </div>
             ) : (
               <input
                 type={fd.type}
@@ -271,7 +292,10 @@ export default function ParcelAttributePanel({
           <button
             className="pap-action-btn pap-action-btn--danger"
             onClick={() => {
-              if (window.confirm('Xóa vùng này?')) onRemove?.(layer.id, parcel.id)
+              onConfirm?.(
+                { title: 'Xóa vùng này?', message: 'Vùng và toàn bộ thông tin thuộc tính của vùng sẽ bị xóa khỏi lớp.' },
+                () => onRemove?.(layer.id, parcel.id),
+              )
             }}
             title="Xóa vùng"
           >🗑 Xóa</button>

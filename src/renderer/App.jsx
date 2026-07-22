@@ -29,6 +29,7 @@ import LayerPanel            from '@components/LayerPanel'
 import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
 import SettingsModal         from '@components/SettingsModal'
+import ConfirmDialog         from '@components/ConfirmDialog'
 import { useLayerManager }   from '@modules/useLayerManager'
 import { PROVINCES }         from '@modules/vn2000'
 import { loadSettingsFromFile } from '@modules/settingsStore'
@@ -102,7 +103,17 @@ export default function App() {
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
   // Multi-select: [{ layerId, parcelId }]
   const [multiSelected,  setMultiSelected]  = useState([])
+  const [confirmation,   setConfirmation]   = useState(null)
   const multiSelectedIds = useMemo(() => multiSelected.map(item => item.parcelId), [multiSelected])
+
+  const requestConfirmation = useCallback((options, action) => {
+    setConfirmation({ ...options, action })
+  }, [])
+
+  const confirmAction = useCallback(() => {
+    confirmation?.action?.()
+    setConfirmation(null)
+  }, [confirmation])
 
   // Khởi động: load AI settings từ file
   useEffect(() => { loadSettingsFromFile() }, [])
@@ -157,19 +168,22 @@ export default function App() {
       if (e.key.toLowerCase() === 'n') setSnapping(value => !value)
       if (e.key === 'Escape') { clearSelection(); setMultiSelected([]) }
       if (e.key === 'Delete' && selected?.parcelId) {
-        if (window.confirm('Xóa vùng đang chọn?')) removeParcel(selected.layerId, selected.parcelId)
+        requestConfirmation(
+          { title: 'Xóa vùng đang chọn?', message: 'Vùng và toàn bộ thông tin thuộc tính của vùng sẽ bị xóa khỏi lớp hiện tại.' },
+          () => removeParcel(selected.layerId, selected.parcelId),
+        )
       }
       // Delete xóa hàng loạt khi multi-select
       if (e.key === 'Delete' && multiSelected.length > 0 && !selected?.parcelId) {
-        if (window.confirm(`Xóa ${multiSelected.length} vùng đã chọn?`)) {
-          removeParcels(multiSelected)
-          setMultiSelected([])
-        }
+        requestConfirmation(
+          { title: `Xóa ${multiSelected.length} vùng đã chọn?`, message: 'Thao tác sẽ xóa đồng thời tất cả vùng đang được chọn khỏi bản vẽ.' },
+          () => { removeParcels(multiSelected); setMultiSelected([]) },
+        )
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selected, multiSelected, undo, redo, removeParcels])
+  }, [selected, multiSelected, undo, redo, removeParcels, requestConfirmation])
 
   // ── Handlers ────────────────────────────────────────────
 
@@ -414,6 +428,7 @@ export default function App() {
                 onSelectParcel={handleParcelSelected}
                 onRemoveParcel={removeParcel}
                 onDuplicateParcel={duplicateParcel}
+                onConfirm={requestConfirmation}
               />
             ) : rightTab === 'multisel' ? (
               <MultiSelectPanel
@@ -428,10 +443,10 @@ export default function App() {
                   setRightTab('attrs')
                 }}
                 onDeleteAll={() => {
-                  if (window.confirm(`Xóa ${multiSelected.length} vùng đã chọn?`)) {
-                    removeParcels(multiSelected)
-                    setMultiSelected([])
-                  }
+                  requestConfirmation(
+                    { title: `Xóa ${multiSelected.length} vùng đã chọn?`, message: 'Thao tác sẽ xóa đồng thời tất cả vùng đang được chọn khỏi bản vẽ.' },
+                    () => { removeParcels(multiSelected); setMultiSelected([]) },
+                  )
                 }}
                 onBatchUpdate={(attrs) => updateParcelsAttributes(multiSelected, attrs)}
                 onExportSelected={() => {
@@ -470,6 +485,7 @@ export default function App() {
                 onRemove={removeParcel}
                 onDuplicate={duplicateParcel}
                 onEditGeometry={() => setShowGeometry(true)}
+                onConfirm={requestConfirmation}
               />
             )}
           </div>
@@ -502,6 +518,17 @@ export default function App() {
       <SettingsModal
         open={showSettings}
         onClose={() => setShowSettings(false)}
+        onConfirm={requestConfirmation}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmation)}
+        title={confirmation?.title}
+        message={confirmation?.message}
+        confirmLabel={confirmation?.confirmLabel}
+        tone={confirmation?.tone}
+        onConfirm={confirmAction}
+        onCancel={() => setConfirmation(null)}
       />
 
       <DataInputModal

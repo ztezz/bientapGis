@@ -233,6 +233,45 @@
   border-color: #f87171 !important;
 }
 
+.pap-area-input {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+}
+
+.pap-auto-area-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 78px;
+  padding: 0 10px;
+  border: 1px solid rgba(76, 110, 245, 0.45);
+  border-radius: 7px;
+  background: linear-gradient(145deg, rgba(76, 110, 245, 0.2), rgba(76, 110, 245, 0.08));
+  color: #a9c7ff;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.pap-auto-area-btn span {
+  color: #6ee7b7;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.pap-auto-area-btn:hover {
+  border-color: #6f8cff;
+  background: rgba(76, 110, 245, 0.28);
+  color: #dbeafe;
+}
+
+.pap-auto-area-btn:active { transform: translateY(1px); }
+.pap-auto-area-btn:focus-visible { outline: 2px solid rgba(76, 110, 245, 0.45); outline-offset: 2px; }
+
 .pap-select {
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2364748b' d='M6 8L1 3h10z'/%3E%3C/svg%3E");

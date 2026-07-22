@@ -165,6 +165,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   const transformRef = useRef(null)
   const snapMarkerRef = useRef(null)
   const viewportFrameRef = useRef(null)
+  const pendingViewportRef = useRef(null)
+  const viewportSettleRef = useRef(null)
 
   // Object registry: fabricObjectId → { layerId, parcelId, role }
   const registry   = useRef(new Map())
@@ -194,11 +196,34 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         maxY: Math.max(worldA.y, worldB.y),
       } : null,
     }
-    if (viewportFrameRef.current !== null) cancelAnimationFrame(viewportFrameRef.current)
-    viewportFrameRef.current = requestAnimationFrame(() => {
+    pendingViewportRef.current = info
+    if (viewportFrameRef.current !== null) return
+    viewportFrameRef.current = setTimeout(() => {
       viewportFrameRef.current = null
-      onViewportChange?.(info)
-    })
+      onViewportChange?.(pendingViewportRef.current)
+    }, 32)
+  }
+
+  function setViewportFast(canvas, viewportTransform) {
+    canvas.viewportTransform = viewportTransform
+    canvas.calcViewportBoundaries()
+    canvas.requestRenderAll()
+
+    clearTimeout(viewportSettleRef.current)
+    viewportSettleRef.current = setTimeout(() => {
+      canvas.setViewportTransform(canvas.viewportTransform.slice())
+    }, 120)
+  }
+
+  function zoomToPointFast(canvas, point, zoom) {
+    const viewportTransform = canvas.viewportTransform.slice()
+    const scenePoint = fabric.util.transformPoint(point, fabric.util.invertTransform(viewportTransform))
+    viewportTransform[0] = zoom
+    viewportTransform[3] = zoom
+    const transformedPoint = fabric.util.transformPoint(scenePoint, viewportTransform)
+    viewportTransform[4] += point.x - transformedPoint.x
+    viewportTransform[5] += point.y - transformedPoint.y
+    setViewportFast(canvas, viewportTransform)
   }
 
   useEffect(() => { activeToolRef.current = tool }, [tool])
@@ -307,8 +332,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     canvas.on('mouse:wheel', opt => {
       let z = canvas.getZoom() * (0.999 ** opt.e.deltaY)
       z = Math.min(Math.max(z, 0.05), 80)
-      canvas.zoomToPoint(new fabric.Point(opt.e.offsetX, opt.e.offsetY), z)
-      canvas.requestRenderAll()
+      zoomToPointFast(canvas, new fabric.Point(opt.e.offsetX, opt.e.offsetY), z)
       emitViewportChange()
       opt.e.preventDefault()
       opt.e.stopPropagation()
@@ -325,11 +349,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     })
     canvas.on('mouse:move', opt => {
       if (!isPanning.current) return
-      canvas.relativePan(new fabric.Point(
-        opt.e.clientX - lastPan.current.x,
-        opt.e.clientY - lastPan.current.y
-      ))
-      canvas.requestRenderAll()
+      const viewportTransform = canvas.viewportTransform.slice()
+      viewportTransform[4] += opt.e.clientX - lastPan.current.x
+      viewportTransform[5] += opt.e.clientY - lastPan.current.y
+      setViewportFast(canvas, viewportTransform)
       lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
       emitViewportChange()
     })
@@ -364,7 +387,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', resize)
-      if (viewportFrameRef.current !== null) cancelAnimationFrame(viewportFrameRef.current)
+      if (viewportFrameRef.current !== null) clearTimeout(viewportFrameRef.current)
+      clearTimeout(viewportSettleRef.current)
       canvas.dispose()
       fc.current = null
     }
@@ -377,6 +401,9 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   useEffect(() => {
     const canvas = fc.current
     if (!canvas) return
+    canvas.getObjects().forEach(object => {
+      if (object.__isGrid) object.visible = !transparentBackground
+    })
     canvas.setBackgroundColor(transparentBackground ? 'rgba(0,0,0,0)' : '#1a1d2e', canvas.requestRenderAll.bind(canvas))
   }, [transparentBackground])
 
@@ -487,8 +514,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         const vpt = canvas.viewportTransform.slice()
         vpt[4] += dx
         vpt[5] += dy
-        canvas.setViewportTransform(vpt)
-        canvas.requestRenderAll()
+        setViewportFast(canvas, vpt)
         emitViewportChange()
       }
       lastPan.current = { x: event.clientX, y: event.clientY }

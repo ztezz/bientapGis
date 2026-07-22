@@ -42,6 +42,7 @@ export default function LayerPanel({
   onSelectParcel,
   onRemoveParcel,
   onDuplicateParcel,
+  onConfirm,
   activeLayerId,
   onSetActiveLayer,
 }) {
@@ -237,8 +238,10 @@ export default function LayerPanel({
                   <button
                     className="lp-icon-btn lp-icon-btn--danger"
                     onClick={() => {
-                      if (window.confirm(`Xóa lớp "${layer.name}" và toàn bộ vùng?`))
-                        onRemoveLayer(layer.id)
+                      onConfirm?.(
+                        { title: `Xóa lớp "${layer.name}"?`, message: `Toàn bộ ${layer.parcels.length} vùng trong lớp cũng sẽ bị xóa khỏi bản vẽ.` },
+                        () => onRemoveLayer(layer.id),
+                      )
                     }}
                     title="Xóa lớp"
                     disabled={layers.length <= 1}
@@ -320,8 +323,10 @@ export default function LayerPanel({
                             className="lp-icon-btn lp-icon-btn--sm lp-icon-btn--danger"
                             onClick={e => {
                               e.stopPropagation()
-                              if (window.confirm('Xóa vùng này?'))
-                                onRemoveParcel(layer.id, parcel.id)
+                              onConfirm?.(
+                                { title: 'Xóa vùng này?', message: 'Vùng và toàn bộ thông tin thuộc tính của vùng sẽ bị xóa khỏi lớp.' },
+                                () => onRemoveParcel(layer.id, parcel.id),
+                              )
                             }}
                             title="Xóa vùng"
                           >{IC.trash}</button>

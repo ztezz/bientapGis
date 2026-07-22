@@ -69,7 +69,13 @@ export default function BasemapLayer({ enabled, source, opacity, viewport, provi
     const options = config.google
       ? { maxZoom: 22, subdomains: ['0', '1', '2', '3'], attribution: '&copy; Google' }
       : config.options
-    const tile = L.tileLayer(url, { ...options, opacity })
+    const tile = L.tileLayer(url, {
+      ...options,
+      opacity,
+      updateWhenIdle: true,
+      updateWhenZooming: false,
+      keepBuffer: 3,
+    })
     tile.on('tileerror', () => onError?.('Không tải được tile bản đồ nền. Kiểm tra Internet hoặc API key.'))
     tile.addTo(map)
     tileRef.current = tile
