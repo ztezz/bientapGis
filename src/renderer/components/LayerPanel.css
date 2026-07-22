@@ -168,11 +168,80 @@
   font-size: 12px;
 }
 
+/* ── Source file tree ── */
+.lp-folder {
+  border-bottom: 1px solid #202741;
+  background: #1b2034;
+}
+
+.lp-folder-row {
+  width: 100%;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.lp-folder-row:hover { background: rgba(76, 110, 245, 0.08); }
+
+.lp-folder-chevron {
+  width: 10px;
+  color: #6f86ae;
+  font-size: 9px;
+  flex-shrink: 0;
+}
+
+.lp-folder-icon {
+  width: 20px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: #b7791f;
+  color: #fde68a;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.lp-folder-info {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lp-folder-info strong {
+  overflow: hidden;
+  color: #d8e2f1;
+  font-size: 12.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lp-folder-info small {
+  color: #607391;
+  font-size: 10.5px;
+}
+
 /* ── Layer item ── */
 .lp-layer {
   border-bottom: 1px solid #1a1f35;
   transition: background 0.12s;
 }
+.lp-layer--nested {
+  margin-left: 18px;
+  border-left: 1px solid #2b3656;
+  background: #131725;
+}
+.lp-layer--nested .lp-layer-row { padding-left: 7px; }
 .lp-layer--active > .lp-layer-row {
   background: rgba(76, 110, 245, 0.08);
 }

@@ -460,7 +460,10 @@ class LayerStore {
         color:    layer.color,
         visible:  layer.visible,
         locked:   layer.locked,
-        opacity:  layer.opacity,
+       opacity:  layer.opacity,
+        sourceGroupId: layer.sourceGroupId,
+        sourceGroupName: layer.sourceGroupName,
+        sourceFormat: layer.sourceFormat,
         cadEntities: JSON.parse(JSON.stringify(layer.cadEntities || [])),
         cadTexts: JSON.parse(JSON.stringify(layer.cadTexts || [])),
         parcels:  layer.parcels.map(p => ({
@@ -492,6 +495,9 @@ class LayerStore {
         color:     l.color   || DEFAULT_LAYER_COLOR,
         fillColor: hexToFill(l.color || DEFAULT_LAYER_COLOR),
         order:     i,
+        sourceGroupId: l.sourceGroupId,
+        sourceGroupName: l.sourceGroupName,
+        sourceFormat: l.sourceFormat,
         cadEntities: JSON.parse(JSON.stringify(l.cadEntities || [])),
         cadTexts: JSON.parse(JSON.stringify(l.cadTexts || [])),
         parcels:   (l.parcels || []).map(p => ({
@@ -518,13 +524,18 @@ class LayerStore {
     this._recordHistory()
     const startOrder = this._layers.length
     const importedLayerIds = []
+    const sourceGroupIds = new Map()
     importedLayers.forEach((source, index) => {
       const layerId = uuid()
       importedLayerIds.push(layerId)
       const color = source.color || LAYER_COLORS[(startOrder + index) % LAYER_COLORS.length]
+      if (source.sourceGroupId && !sourceGroupIds.has(source.sourceGroupId)) {
+        sourceGroupIds.set(source.sourceGroupId, uuid())
+      }
       this._layers.push({
         ...source,
         id: layerId,
+        sourceGroupId: source.sourceGroupId ? sourceGroupIds.get(source.sourceGroupId) : undefined,
         name: source.name || `Lớp import ${index + 1}`,
         type: source.type || 'parcel', visible: source.visible !== false, locked: source.locked || false,
         opacity: source.opacity ?? 1, color, fillColor: hexToFill(color),

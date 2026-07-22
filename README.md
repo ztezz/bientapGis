@@ -11,6 +11,7 @@ VN-2000. Dự án được xây dựng bằng Electron, React, Vite và Fabric.j
 - Thêm, xóa, kéo thả và bắt điểm đỉnh.
 - Đo khoảng cách, diện tích và chu vi.
 - Quản lý nhiều layer, ẩn/hiện, khóa và điều chỉnh độ trong suốt.
+- Nhóm layer theo từng file DWG trong cây thư mục có thể thu gọn/mở rộng.
 - Undo/redo và tự động lưu dữ liệu phù hợp vào `localStorage`.
 - Chuyển đổi tọa độ VN-2000 bằng Proj4.
 - Nhập JSON, GeoJSON, CSV, DXF ASCII và DWG.
@@ -139,6 +140,9 @@ Các entity đang được hỗ trợ gồm:
 
 Sau khi nhập DWG, có thể vẽ thửa mới trên layer `Vùng tạo từ DWG` và sử dụng
 bắt điểm trên các layer CAD đang hiển thị.
+
+Mỗi file DWG được hiển thị thành một thư mục riêng trong bảng quản lý lớp.
+Nhấn vào tên file để mở hoặc thu gọn toàn bộ layer thuộc bản vẽ đó.
 
 ## Phím tắt công cụ
 

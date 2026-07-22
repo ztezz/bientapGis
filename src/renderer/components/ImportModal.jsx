@@ -40,7 +40,7 @@ export default function ImportModal({ open, provinceKey, onClose, onAppend, onRe
         setError(result?.error || 'Không thể đọc file DWG.')
         return
       }
-      const imported = parseDWG(result.drawing)
+      const imported = parseDWG(result.drawing, result.filename)
       setFileName(result.filename)
       setParsed({
         ...imported,

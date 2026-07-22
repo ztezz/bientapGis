@@ -111,6 +111,19 @@ src/
 }
 ```
 
+Layer sinh ra tu cung mot lan mo DWG co them metadata nhom:
+
+```js
+{
+  sourceGroupId,       // ID rieng cho lan import
+  sourceGroupName,     // ten file DWG
+  sourceFormat: 'DWG'
+}
+```
+
+`LayerPanel` dung metadata nay de hien thi cay `file DWG -> layer`. File DWG
+mac dinh thu gon; layer khong co metadata nhom van hien thi o cap goc.
+
 `cadEntities` chi de hien thi va bat diem. Chung khong phai thua dat.
 
 ```js
@@ -386,6 +399,20 @@ Khong hard-code duong dan tren vao ma nguon.
   build, toa do, DWG/DXF, phim tat, gioi han va giay phep.
 - Kiem thu da chay: `git diff --check`.
 - Gioi han/cong viec tiep theo: chua co anh chup giao dien trong README.
+
+### 2026-07-22 - Nhom layer DWG theo cay thu muc
+
+- Muc tieu: giam roi khi mo dong thoi nhieu file DWG.
+- File da sua: `gisImporter.js`, `ImportModal.jsx`, `layerStore.js`,
+  `LayerPanel.jsx`, `LayerPanel.css`, `README.md`, `AI_HANDOFF.md`.
+- Hanh vi moi: moi file DWG la mot node thu muc co the thu gon/mo rong; cac
+  layer CAD va `Vung tao tu DWG` nam ben trong dung file nguon.
+- Quyet dinh ky thuat: gan `sourceGroupId`, `sourceGroupName`, `sourceFormat`
+  vao layer; regenerate group ID khi append de tranh trung ID; giu metadata
+  khi export/import JSON. Layer cu khong co metadata van hien thi cap goc.
+- Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
+- Gioi han/cong viec tiep theo: chua co thao tac an/hien hoac xoa ca thu muc;
+  hien tai cac thao tac van thuc hien tren tung layer con.
 
 ### Mau ghi cho lan sau
 

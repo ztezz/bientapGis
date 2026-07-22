@@ -48,6 +48,7 @@ export default function LayerPanel({
   onSetActiveLayer,
 }) {
   const [expandedLayers, setExpandedLayers] = useState(new Set([layers[0]?.id]))
+  const [expandedGroups, setExpandedGroups] = useState(new Set())
   const [renamingId,     setRenamingId]     = useState(null)
   const [renameVal,      setRenameVal]       = useState('')
   const [showAddForm,    setShowAddForm]     = useState(false)
@@ -62,6 +63,14 @@ export default function LayerPanel({
   // ── Expand / Collapse ──────────────────────────────────────
   const toggleExpand = (id) => {
     setExpandedLayers(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const toggleGroup = (id) => {
+    setExpandedGroups(prev => {
       const next = new Set(prev)
       next.has(id) ? next.delete(id) : next.add(id)
       return next
@@ -101,6 +110,27 @@ export default function LayerPanel({
 
   // ── Render ─────────────────────────────────────────────────
   const reversedLayers = [...layers].reverse()  // hiển thị lớp trên cùng trước
+  const displayRows = []
+  const addedGroups = new Set()
+  reversedLayers.forEach(layer => {
+    if (!layer.sourceGroupId) {
+      displayRows.push({ type: 'layer', layer, nested: false })
+      return
+    }
+    if (addedGroups.has(layer.sourceGroupId)) return
+    addedGroups.add(layer.sourceGroupId)
+    const groupLayers = reversedLayers.filter(item => item.sourceGroupId === layer.sourceGroupId)
+    displayRows.push({
+      type: 'group',
+      id: layer.sourceGroupId,
+      name: layer.sourceGroupName || 'Bản vẽ DWG',
+      format: layer.sourceFormat || 'DWG',
+      layers: groupLayers,
+    })
+    if (expandedGroups.has(layer.sourceGroupId)) {
+      groupLayers.forEach(groupLayer => displayRows.push({ type: 'layer', layer: groupLayer, nested: true }))
+    }
+  })
 
   return (
     <div className="layer-panel">
@@ -160,7 +190,26 @@ export default function LayerPanel({
           <div className="lp-empty">Chưa có lớp nào</div>
         )}
 
-        {reversedLayers.map((layer, visIdx) => {
+        {displayRows.map((item) => {
+          if (item.type === 'group') {
+            const expanded = expandedGroups.has(item.id)
+            const cadCount = item.layers.reduce((sum, layer) =>
+              sum + (layer.cadEntities?.length || 0) + (layer.cadTexts?.length || 0), 0)
+            return (
+              <div key={`group-${item.id}`} className="lp-folder">
+                <button className="lp-folder-row" onClick={() => toggleGroup(item.id)}>
+                  <span className="lp-folder-chevron">{expanded ? IC.collapse : IC.expand}</span>
+                  <span className="lp-folder-icon">{expanded ? '▾' : '▸'}</span>
+                  <span className="lp-folder-info">
+                    <strong title={item.name}>{item.name}</strong>
+                    <small>{item.format} · {item.layers.length} lớp · {cadCount} CAD</small>
+                  </span>
+                </button>
+              </div>
+            )
+          }
+
+          const layer = item.layer
           const realIdx  = layers.findIndex(l => l.id === layer.id)
           const isActive = layer.id === activeLayerId
           const expanded = expandedLayers.has(layer.id)
@@ -168,7 +217,7 @@ export default function LayerPanel({
           return (
             <div
               key={layer.id}
-              className={`lp-layer ${isActive ? 'lp-layer--active' : ''} ${layer.locked ? 'lp-layer--locked' : ''}`}
+              className={`lp-layer ${item.nested ? 'lp-layer--nested' : ''} ${isActive ? 'lp-layer--active' : ''} ${layer.locked ? 'lp-layer--locked' : ''}`}
               draggable
               onDragStart={() => handleDragStart(realIdx)}
               onDragEnter={() => handleDragEnter(realIdx)}

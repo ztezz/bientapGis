@@ -263,13 +263,14 @@ export function parseDXF(text) {
   }
 }
 
-export function parseDWG(drawing) {
+export function parseDWG(drawing, sourceFileName = 'Bản vẽ DWG') {
   const drawingEntities = Array.isArray(drawing?.entities) ? drawing.entities : []
   const drawingTexts = Array.isArray(drawing?.texts) ? drawing.texts : []
   if (!drawingEntities.length && !drawingTexts.length) {
     throw new Error('DWG không có hình học hoặc chữ CAD 2D được hỗ trợ.')
   }
   const groups = new Map()
+  const sourceGroupId = `dwg-${uid()}`
   const unitCode = Number(drawing.unitCode) || 0
   const scale = CAD_UNIT_SCALES[unitCode] || 1
   const getGroup = layerName => {
@@ -284,6 +285,7 @@ export function parseDWG(drawing) {
     const id = uid()
     return {
       id, name: `CAD · ${name}`, type: 'reference', visible: true, locked: true, opacity: 0.85,
+      sourceGroupId, sourceGroupName: sourceFileName, sourceFormat: 'DWG',
       color: DXF_COLORS[layerIndex % DXF_COLORS.length], order: layerIndex,
       parcels: [],
       cadEntities: group.entities.map((entity, entityIndex) => ({
@@ -317,6 +319,7 @@ export function parseDWG(drawing) {
   })
   const parcelLayer = {
     id: uid(), name: 'Vùng tạo từ DWG', type: 'parcel', visible: true, locked: false,
+    sourceGroupId, sourceGroupName: sourceFileName, sourceFormat: 'DWG',
     opacity: 1, color: '#00BCD4', order: referenceLayers.length, parcels: [],
   }
   return {
