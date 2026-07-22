@@ -12,7 +12,7 @@
  * Tích hợp nút "Test Connection" để kiểm tra live.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   getSettings,
   saveSettings,
@@ -83,7 +83,7 @@ const SUGGESTED_MODELS = [
 // COMPONENT CHÍNH
 // ============================================================
 
-export default function SettingsModal({ open, onClose, onSaved }) {
+export default function SettingsModal({ open, onClose }) {
   const [form, setForm]           = useState(() => getSettings())
   const [testStatus, setTestStatus] = useState(null)   // null | 'testing' | 'ok' | 'error'
   const [testMsg, setTestMsg]     = useState('')
@@ -92,7 +92,6 @@ export default function SettingsModal({ open, onClose, onSaved }) {
   const [errors, setErrors]       = useState({})
   const [showKey, setShowKey]     = useState(false)
   const [newFbModel, setNewFbModel] = useState('')
-  const overlayRef                = useRef(null)
 
   // Reload form mỗi khi mở
   useEffect(() => {
@@ -167,9 +166,8 @@ export default function SettingsModal({ open, onClose, onSaved }) {
     }
 
     try {
-      const saved = saveSettings(form)
+      saveSettings(form)
       setSaved(true)
-      onSaved?.(saved)
       setTimeout(() => setSaved(false), 2500)
     } catch (e) {
       setErrors({ general: e.message })
@@ -216,11 +214,7 @@ export default function SettingsModal({ open, onClose, onSaved }) {
   ])]
 
   return (
-    <div
-      className="settings-overlay"
-      ref={overlayRef}
-      onClick={(e) => { if (e.target === overlayRef.current) onClose() }}
-    >
+    <div className="settings-overlay">
       <div className="settings-modal" role="dialog" aria-modal="true" aria-label="Cài đặt AI">
 
         {/* ── Header ── */}

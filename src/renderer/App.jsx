@@ -13,7 +13,7 @@
  *   └────────────┴──────────────────────┴──────────────────┘
  */
 
-import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react'
+import React, { useState, useRef, useEffect, useCallback, useMemo, lazy, Suspense } from 'react'
 import CanvasEditor          from '@components/CanvasEditor'
 import DataInputModal        from '@components/DataInputModal'
 import ValidationModal       from '@components/ValidationModal'
@@ -102,6 +102,7 @@ export default function App() {
   const [statusBar,      setStatusBar]      = useState({ area: 0, perimeter: 0 })
   // Multi-select: [{ layerId, parcelId }]
   const [multiSelected,  setMultiSelected]  = useState([])
+  const multiSelectedIds = useMemo(() => multiSelected.map(item => item.parcelId), [multiSelected])
 
   // Khởi động: load AI settings từ file
   useEffect(() => { loadSettingsFromFile() }, [])
@@ -325,7 +326,7 @@ export default function App() {
             layers={layers}
             activeLayerId={activeLayerId}
             selectedParcelId={selected?.parcelId}
-            multiSelectedIds={multiSelected.map(s => s.parcelId)}
+            multiSelectedIds={multiSelectedIds}
             snappingEnabled={snapping}
             transparentBackground={basemapEnabled}
             tool={tool}
@@ -501,7 +502,6 @@ export default function App() {
       <SettingsModal
         open={showSettings}
         onClose={() => setShowSettings(false)}
-        onSaved={() => setShowSettings(false)}
       />
 
       <DataInputModal

@@ -164,6 +164,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   // Transform cache (để screenToCoord)
   const transformRef = useRef(null)
   const snapMarkerRef = useRef(null)
+  const viewportFrameRef = useRef(null)
 
   // Object registry: fabricObjectId → { layerId, parcelId, role }
   const registry   = useRef(new Map())
@@ -193,7 +194,11 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         maxY: Math.max(worldA.y, worldB.y),
       } : null,
     }
-    onViewportChange?.(info)
+    if (viewportFrameRef.current !== null) cancelAnimationFrame(viewportFrameRef.current)
+    viewportFrameRef.current = requestAnimationFrame(() => {
+      viewportFrameRef.current = null
+      onViewportChange?.(info)
+    })
   }
 
   useEffect(() => { activeToolRef.current = tool }, [tool])
@@ -303,6 +308,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       let z = canvas.getZoom() * (0.999 ** opt.e.deltaY)
       z = Math.min(Math.max(z, 0.05), 80)
       canvas.zoomToPoint(new fabric.Point(opt.e.offsetX, opt.e.offsetY), z)
+      canvas.requestRenderAll()
       emitViewportChange()
       opt.e.preventDefault()
       opt.e.stopPropagation()
@@ -323,6 +329,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         opt.e.clientX - lastPan.current.x,
         opt.e.clientY - lastPan.current.y
       ))
+      canvas.requestRenderAll()
       lastPan.current = { x: opt.e.clientX, y: opt.e.clientY }
       emitViewportChange()
     })
@@ -357,6 +364,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', resize)
+      if (viewportFrameRef.current !== null) cancelAnimationFrame(viewportFrameRef.current)
       canvas.dispose()
       fc.current = null
     }
@@ -556,6 +564,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     },
     resetZoom() {
       fc.current?.setViewportTransform([1, 0, 0, 1, 0, 0])
+      fc.current?.requestRenderAll()
       emitViewportChange()
     },
     zoomIn() {
@@ -563,6 +572,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       if (!canvas) return
       const next = Math.min(canvas.getZoom() * 1.25, 80)
       canvas.zoomToPoint(new fabric.Point(canvas.width / 2, canvas.height / 2), next)
+      canvas.requestRenderAll()
       emitViewportChange()
     },
     zoomOut() {
@@ -570,6 +580,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       if (!canvas) return
       const next = Math.max(canvas.getZoom() / 1.25, 0.05)
       canvas.zoomToPoint(new fabric.Point(canvas.width / 2, canvas.height / 2), next)
+      canvas.requestRenderAll()
       emitViewportChange()
     },
     centerOnScenePoint(x, y) {
