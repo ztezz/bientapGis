@@ -1,0 +1,25 @@
+.cad-prop, .cad-prop-empty { color: #cbd5e1; font-size: 12px; }
+.cad-prop-empty { display: flex; flex-direction: column; gap: 7px; padding: 24px 16px; color: #64748b; text-align: center; }
+.cad-prop-empty strong { color: #cbd5e1; }
+.cad-prop header { display: flex; align-items: center; justify-content: space-between; padding: 12px; border-bottom: 1px solid #242c46; }
+.cad-prop header div { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.cad-prop header strong { color: #e2e8f0; font-size: 14px; }
+.cad-prop header span { overflow: hidden; color: #64748b; text-overflow: ellipsis; white-space: nowrap; }
+.cad-prop header button { border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 20px; }
+.cad-prop-meta { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px; background: #121625; color: #60a5fa; }
+.cad-prop-meta code { overflow: hidden; color: #64748b; text-overflow: ellipsis; }
+.cad-prop-warning { margin: 10px 12px 0; padding: 8px; border: 1px solid rgba(245,158,11,.3); border-radius: 6px; background: rgba(245,158,11,.08); color: #fbbf24; }
+.cad-prop-form { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.cad-prop-form label { display: flex; flex-direction: column; gap: 5px; color: #8090aa; font-size: 11px; }
+.cad-prop-form input, .cad-prop-form textarea { box-sizing: border-box; width: 100%; border: 1px solid #2c3658; border-radius: 6px; background: #111522; color: #e2e8f0; padding: 7px 8px; font: inherit; resize: vertical; }
+.cad-prop-form input:focus, .cad-prop-form textarea:focus { outline: none; border-color: #4c6ef5; }
+.cad-prop-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.cad-prop-save, .cad-prop-delete { margin: 0 12px 10px; padding: 8px; border-radius: 6px; cursor: pointer; font-weight: 700; }
+.cad-prop-save { margin: 0; border: 1px solid #2563eb; background: #1d4ed8; color: white; }
+.cad-prop-delete { width: calc(100% - 24px); border: 1px solid rgba(239,68,68,.4); background: rgba(239,68,68,.08); color: #fca5a5; }
+.cad-prop button:disabled, .cad-prop input:disabled, .cad-prop textarea:disabled { cursor: not-allowed; opacity: .45; }
+.cad-prop-summary { padding: 18px 12px; text-align: center; }
+.cad-prop-summary b { display: block; color: #60a5fa; font-size: 28px; }
+.cad-prop-summary span { color: #64748b; }
+.cad-prop-summary p { color: #94a3b8; line-height: 1.5; }
+.cad-prop-footnote { margin: 4px 12px 14px; color: #53627a; font-size: 10.5px; line-height: 1.45; }

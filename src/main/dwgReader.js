@@ -14,6 +14,7 @@ const VNI_MAP = new Map(VNI_TO_UNICODE)
 const VNI_PATTERN = new RegExp(VNI_TO_UNICODE
   .map(([encoded]) => encoded.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
   .join('|'), 'g')
+const CURVE_SEGMENT_ANGLE = Math.PI / 6 // 30 degrees, enough for CAD reference display and snapping
 
 function convertVniToUnicode(text) {
   const converted = text.replace(VNI_PATTERN, encoded => VNI_MAP.get(encoded) || encoded).normalize('NFC')
@@ -70,8 +71,8 @@ async function getLibreDwg(app) {
 }
 
 function pointFromVertex(vertex) {
-  const cadX = Number(vertex?.x)
-  const cadY = Number(vertex?.y)
+  const cadX = Number(vertex?.cadX ?? vertex?.x)
+  const cadY = Number(vertex?.cadY ?? vertex?.y)
   return Number.isFinite(cadX) && Number.isFinite(cadY)
     ? { cadX, cadY, bulge: Number(vertex?.bulge) || 0 }
     : null
@@ -81,7 +82,7 @@ function samePoint(a, b, tolerance = 1e-7) {
   return Boolean(a && b) && Math.hypot(a.cadX - b.cadX, a.cadY - b.cadY) <= tolerance
 }
 
-function interpolateBulge(from, to, bulge, maxAngle = Math.PI / 12) {
+function interpolateBulge(from, to, bulge, maxAngle = CURVE_SEGMENT_ANGLE) {
   if (!bulge || samePoint(from, to)) return []
   const chordX = to.cadX - from.cadX
   const chordY = to.cadY - from.cadY
@@ -265,7 +266,7 @@ function interpolateArc(center, radius, startAngle, endAngle, isCCW = true) {
   let sweep = endAngle - startAngle
   if (isCCW && sweep <= 0) sweep += Math.PI * 2
   if (!isCCW && sweep >= 0) sweep -= Math.PI * 2
-  const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 12)))
+  const steps = Math.max(1, Math.ceil(Math.abs(sweep) / CURVE_SEGMENT_ANGLE))
   return Array.from({ length: steps + 1 }, (_, index) => {
     const angle = startAngle + sweep * index / steps
     return { cadX: center.x + radius * Math.cos(angle), cadY: center.y + radius * Math.sin(angle) }
@@ -280,7 +281,7 @@ function interpolateEllipse(edge) {
   let sweep = Number(edge.endAngle) - Number(edge.startAngle)
   if (edge.isCCW !== false && sweep <= 0) sweep += Math.PI * 2
   if (edge.isCCW === false && sweep >= 0) sweep -= Math.PI * 2
-  const steps = Math.max(1, Math.ceil(Math.abs(sweep) / (Math.PI / 12)))
+  const steps = Math.max(1, Math.ceil(Math.abs(sweep) / CURVE_SEGMENT_ANGLE))
   const minorRatio = Number(edge.lengthOfMinorAxis) || 0
   const minorX = -majorY * minorRatio
   const minorY = majorX * minorRatio
@@ -410,6 +411,7 @@ async function readDWG(app, buffer, sourcePath) {
     let importedHatchBoundaries = 0
     const entityTypeCounts = {}
     const blocksByName = new Map((database.tables?.BLOCK_RECORD?.entries || []).map(block => [block.name, block]))
+    const missingXrefs = new Set()
     const identity = { a: 1, b: 0, c: 0, d: 1, tx: 0, ty: 0 }
 
     const collectEntity = (entity, matrix = identity, insertLayer = null, depth = 0) => {
@@ -421,6 +423,12 @@ async function readDWG(app, buffer, sourcePath) {
         })
         const block = blocksByName.get(entity.name)
         if (!block || /^\*Model_Space|\*Paper_Space/i.test(block.name)) return
+        // Flags 4/64 mark an external-reference block. Its geometry lives in
+        // another DWG and cannot be recovered when that source file is absent.
+        if (!block.entities?.length && (Number(block.flags) & (4 | 64))) {
+          missingXrefs.add(block.name || entity.name)
+          return
+        }
         const nestedMatrix = composeTransform(matrix, insertTransform(entity, block))
         block.entities.forEach(child => collectEntity(child, nestedMatrix, entity.layer === '0' ? insertLayer : entity.layer, depth + 1))
         return
@@ -466,6 +474,7 @@ async function readDWG(app, buffer, sourcePath) {
       importedHatchBoundaries,
       entityTypeCounts,
       unknownEntityCount: stats?.unknownEntityCount || 0,
+      missingXrefs: [...missingXrefs],
     }
   } finally {
     libredwg.dwg_free(data)

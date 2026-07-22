@@ -207,6 +207,10 @@ ImportModal
   -> reference layers + layer "Vung tao tu DWG"
 ```
 
+Neu `INSERT` tro toi block Xref co flag `4/64` va block khong co entity,
+`dwgReader` ghi ten vao `missingXrefs`. Import modal canh bao rang hinh hoc
+tham chieu khong nam trong file chinh va yeu cau Bind Xref truoc khi nhap lai.
+
 ### Entity ho tro
 
 - `LINE`
@@ -265,7 +269,7 @@ File kiem thu `LO G37 (1).dwg`:
 - Khoang 2.32 MB.
 - Sau bung block: 17,255 hinh hoc.
 - 11,536 text.
-- Hon 246,000 diem noi suy.
+- Khoang 133,960 diem sau khi giam mat do noi suy duong cong xuong 30 do/doan.
 - 24 layer sau import, gom layer vung trong.
 
 Toi uu hien tai:
@@ -302,6 +306,24 @@ Ve vung tren CAD:
 - Van tham gia bat dinh va bat canh.
 - Parcel moi ghi vao layer `Vung tao tu DWG`.
 - Khong cho ve/sua tren layer khoa.
+- Nut `Tao vung` tren node file DWG chuyen bien khep kin `LWPOLYLINE`,
+  `POLYLINE2D`, `HATCH` sang parcel trong `Vung tao tu DWG`.
+- Khong tu chuyen `CIRCLE`/`ELLIPSE` de tranh tao thua tu ky hieu diem.
+- Geometry key lam tron 4 chu so va chuan hoa diem bat dau/chieu vong de bo
+  trung khi nhan nut nhieu lan. Moi luot tao la mot moc Undo.
+
+Bien tap CAD:
+
+- Cong cu `cadpick`, `cadvertex`, `cadmove`, `cadaddvertex`,
+  `caddeletevertex` co phim tat C/J/K/I/O.
+- Hit-test thuc hien thu cong tren renderer gop; khong tao Fabric object rieng
+  cho moi entity. Chi doi tuong dang chon co outline/tay nam.
+- Entity: chon, di chuyen, keo/them/xoa dinh va xoa doi tuong.
+- Text: chon, keo di chuyen; tab CAD sua noi dung, X/Y, textHeight, rotation,
+  xScale va xoa text.
+- Layer reference mac dinh khoa; phai mo khoa truoc khi mutate.
+- CAD edit co Undo/Redo va nam trong export project JSON. Khong ghi nguoc DWG;
+  reference layer lon van khong autosave localStorage.
 
 ## Layer store va persistence
 
@@ -413,6 +435,126 @@ Khong hard-code duong dan tren vao ma nguon.
 - Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
 - Gioi han/cong viec tiep theo: chua co thao tac an/hien hoac xoa ca thu muc;
   hien tai cac thao tac van thuc hien tren tung layer con.
+
+### 2026-07-22 - Them Windows build script
+
+- Muc tieu: cho phep build ung dung bang cach nhap dup tren Windows.
+- File da sua: `build.bat`, `README.md`, `AI_HANDOFF.md`.
+- Hanh vi moi: `build.bat` mac dinh tao ban portable; `build.bat installer`
+  tao bo cai NSIS. Script kiem tra Node/npm, tu cai dependency khi chua co,
+  build renderer va dung ngay khi gap loi.
+- Kiem thu da chay: `cmd.exe /d /c "build.bat < nul"` thanh cong va tao
+  `dist-electron\win-unpacked\VN-LandEditor.exe`; `git diff --check` thanh cong.
+- Gioi han/cong viec tiep theo: NSIS van co the gap loi symbolic link/sign tool
+  tuy quyen Windows; che do portable da tat signAndEditExecutable.
+
+### 2026-07-22 - Thao tac nhanh tren thu muc DWG
+
+- Muc tieu: dieu khien dong loat layer cua mot file DWG.
+- File da sua: `layerStore.js`, `useLayerManager.js`, `App.jsx`,
+  `LayerPanel.jsx`, `LayerPanel.css`, `README.md`, `AI_HANDOFF.md`.
+- Hanh vi moi: thu muc DWG co lenh hien tat ca, an tat ca, dao trang thai hien
+  thi, khoa tat ca va mo khoa tat ca.
+- Quyet dinh ky thuat: `updateLayers` cap nhat nhieu layer trong mot transaction
+  va chi tao mot moc history, nen Ctrl+Z hoan tac toan bo thao tac dong loat.
+- Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
+- Gioi han/cong viec tiep theo: chua co xoa ca thu muc DWG trong mot thao tac.
+
+### 2026-07-22 - Phat hien DWG thieu Xref
+
+- Muc tieu: chan truong hop DWG hien thieu net ma khong co giai thich.
+- File da sua: `dwgReader.js`, `gisImporter.js`, `ImportModal.jsx`, `README.md`,
+  `AI_HANDOFF.md`.
+- Nguyen nhan file `CONG TY THANG MAY TACO-1442-SHCT.dwg`: model space co
+  `INSERT` toi Xref `QH2030_TAN UYEN-1`, block co flags `68` va `0 entity`.
+  File Xref khong co trong Downloads nen cac net do khong ton tai trong DWG
+  chinh va khong the phuc hoi bang parser.
+- Hanh vi moi: import modal canh bao ro ten Xref thieu va huong dan Bind Xref
+  trong AutoCAD truoc khi nhap lai.
+- Kiem thu da chay: doc truc tiep file TACO duoc `247` geometry, `361` text va
+  `missingXrefs: ["QH2030_TAN UYEN-1"]`; `node --check src/main/dwgReader.js`;
+  `npm.cmd run build:renderer`; `git diff --check`.
+- Gioi han/cong viec tiep theo: ung dung chua tu nap Xref roi; can mot DWG da
+  Bind hoac can co file Xref va bo sung resolver rieng.
+
+### 2026-07-22 - Tao vung tu dong tu DWG
+
+- Muc tieu: tao parcel tu cac bien CAD khep kin cua tung file DWG.
+- File da sua: `dwgReader.js`, `layerStore.js`, `useLayerManager.js`, `App.jsx`,
+  `LayerPanel.jsx`, `LayerPanel.css`, `README.md`, `AI_HANDOFF.md`.
+- Sua loi lien quan: `readPolyline` da chuyen vertex sang `cadX/cadY` nhung
+  `interpolateVertices` doc lai `x/y`, lam tat ca polyline co 0 diem. Ham
+  `pointFromVertex` nay chap nhan ca hai dang.
+- Hanh vi moi: nut `Tao vung` tren thu muc DWG lay `LWPOLYLINE`, `POLYLINE2D`
+  va bien `HATCH` khep kin co it nhat 3 diem, dien tich duong; bo circle/ellipse,
+  bo geometry trung va ghi vao layer parcel cua dung source group.
+- Kiem thu file TACO: `247` geometry, `0` entity rong, `6` bien ung vien.
+- Kiem thu file `LO G37 (1).dwg`: `17,255` geometry, `0` entity rong, `218`
+  bien ung vien. `node --check src/main/dwgReader.js`,
+  `npm.cmd run build:renderer`, `git diff --check` thanh cong.
+- Gioi han/cong viec tiep theo: biên HATCH co the la ky hieu thay vi thua;
+  nguoi dung can xem ket qua va Undo neu layer CAD khong phai ranh thua.
+
+### 2026-07-22 - Giam diem noi suy cung tron
+
+- Muc tieu: giam so diem trung gian khong can thiet tren CAD reference.
+- File da sua: `dwgReader.js`, `README.md`, `AI_HANDOFF.md`.
+- Hanh vi moi: ARC, CIRCLE, ELLIPSE, bulge polyline va cung HATCH dung chung
+  `CURVE_SEGMENT_ANGLE = PI / 6`, toi da 30 do moi doan thay vi 15 do.
+- Kiem thu file TACO: circle con 12 diem, tong `681` diem, `0` entity rong.
+- Kiem thu file `LO G37 (1).dwg`: circle con 12 diem, tong `133,960` diem
+  thay vi hon `246,000`, `0` entity rong.
+- Kiem thu da chay: doc truc tiep hai file DWG,
+  `node --check src/main/dwgReader.js`, `npm.cmd run build:renderer`,
+  `git diff --check`.
+- Gioi han/cong viec tiep theo: tai zoom rat lon, duong tron co the thay ro cac
+  doan thang; tang lai mat do neu can xuat hinh hoc chinh xac cao.
+
+### 2026-07-22 - Bien tap doi tuong DWG
+
+- Muc tieu: cho phep sua net va chu CAD sau khi import DWG.
+- File da sua: `layerStore.js`, `useLayerManager.js`, `App.jsx`,
+  `CanvasEditor.jsx`, `CadPropertyPanel.jsx`, `CadPropertyPanel.css`,
+  `README.md`, `AI_HANDOFF.md`.
+- Hanh vi moi: chon CAD, di chuyen net/chu, keo/them/xoa dinh, xoa doi tuong;
+  sua noi dung, toa do, co chu, goc va ty le ngang cua text.
+- Quyet dinh ky thuat: giu renderer batch cho DWG lon, hit-test thu cong va
+  chi render tay nam cho selection; moi commit tao mot moc history.
+- Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
+- Gioi han/cong viec tiep theo: chua ghi nguoc file DWG, chua co them entity
+  CAD moi, chua autosave CAD reference lon vao localStorage.
+
+### 2026-07-22 - Preview keo CAD theo chuot
+
+- Muc tieu: doi tuong CAD phai di chuyen truc tiep trong luc drag.
+- File da sua: `CanvasEditor.jsx`, `AI_HANDOFF.md`.
+- Nguyen nhan: handler cu chi tinh delta o `mouse:move`, khong render preview;
+  store chi commit o `mouse:up` nen giao dien trong nhu chi doi sau click sau.
+- Hanh vi moi: tao mot custom Fabric overlay cho selection dang drag, cap nhat
+  `previewWorld` moi mousemove va `requestRenderAll`; tam an net/chu goc trong
+  batch renderer. Mouseup xoa preview va commit store mot lan de giu Undo sach.
+- Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
+
+### 2026-07-22 - Sua khung chon text CAD bi lech
+
+- Muc tieu: khung selection phai bao dung noi dung chu CAD.
+- File da sua: `CanvasEditor.jsx`, `AI_HANDOFF.md`.
+- Nguyen nhan: khung Rect cu luon lay insertion point lam tam, trong khi text
+  co the can trai/giua/phai, baseline khac nhau va co rotation.
+- Hanh vi moi: `cadTextLayout` tinh align/baseline tu halign, valign hoac MTEXT
+  attachment; ap dung xScale, multiline height, baseline offset va rotation de
+  tao polygon 4 goc. Hit-test cung dung bounding box cua cung layout nay.
+- Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
+
+### 2026-07-22 - Sua text CAD nhay vi tri sau khi tha
+
+- Muc tieu: vi tri preview trong luc drag trung voi renderer sau commit.
+- File da sua: `CanvasEditor.jsx`, `AI_HANDOFF.md`.
+- Nguyen nhan: drag preview luon dung `textAlign = left` va baseline alphabetic,
+  trong khi renderer chinh dung halign/valign hoac MTEXT attachment.
+- Hanh vi moi: preview goi `cadTextLayout` va dung cung align, baseline,
+  baseline offset, rotation, xScale, font size va multiline spacing voi renderer.
+- Kiem thu da chay: `npm.cmd run build:renderer`, `git diff --check`.
 
 ### Mau ghi cho lan sau
 

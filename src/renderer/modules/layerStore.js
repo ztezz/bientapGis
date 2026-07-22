@@ -116,6 +116,15 @@ function hexToFill(hexColor) {
   return `#${h}${FILL_ALPHA}`
 }
 
+function geometryKey(coordinates) {
+  const points = coordinates.map(coord => `${Number(coord.x).toFixed(4)},${Number(coord.y).toFixed(4)}`)
+  if (points.length < 3) return ''
+  const rotations = values => values.map((_, index) => [...values.slice(index), ...values.slice(0, index)].join('|'))
+  const forward = rotations(points)
+  const reverse = rotations([...points].reverse())
+  return [...forward, ...reverse].sort()[0]
+}
+
 // ============================================================
 // STORAGE KEY
 // ============================================================
@@ -286,6 +295,107 @@ class LayerStore {
     if (patch.color) layer.fillColor = hexToFill(patch.color)
     this._save()
     this._notify()
+  }
+
+  updateLayers(layerIds, patchOrUpdater) {
+    const ids = new Set(layerIds)
+    const targets = this._layers.filter(layer => ids.has(layer.id))
+    if (!targets.length) return 0
+    this._recordHistory()
+    targets.forEach(layer => {
+      const patch = typeof patchOrUpdater === 'function' ? patchOrUpdater(layer) : patchOrUpdater
+      if (!patch) return
+      Object.assign(layer, patch)
+      if (patch.color) layer.fillColor = hexToFill(patch.color)
+    })
+    this._save()
+    this._notify()
+    return targets.length
+  }
+
+  createParcelsFromSourceGroup(sourceGroupId) {
+    const groupLayers = this._layers.filter(layer => layer.sourceGroupId === sourceGroupId)
+    const target = groupLayers.find(layer => layer.type === 'parcel' && !layer.locked)
+    if (!target) return { created: 0, skipped: 0, error: 'Không có lớp vùng đang mở khóa trong file DWG.' }
+
+    const supportedTypes = new Set(['LWPOLYLINE', 'POLYLINE2D', 'HATCH'])
+    const existingKeys = new Set(target.parcels.map(parcel => geometryKey(parcel.coordinates)).filter(Boolean))
+    const candidates = groupLayers
+      .filter(layer => layer.type === 'reference')
+      .flatMap(layer => (layer.cadEntities || []).map(entity => ({ entity, layer })))
+      .filter(({ entity }) => entity.closed && supportedTypes.has(entity.sourceType) && entity.coordinates?.length >= 3)
+
+    const additions = []
+    let skipped = 0
+    candidates.forEach(({ entity, layer }) => {
+      const coordinates = entity.coordinates.map((coord, index) => ({
+        point: String(index + 1), x: Number(coord.x), y: Number(coord.y),
+      }))
+      const geom = computeParcelGeom(coordinates)
+      const key = geometryKey(coordinates)
+      if (!key || geom.area_m2 <= 0.0001 || existingKeys.has(key)) {
+        skipped++
+        return
+      }
+      existingKeys.add(key)
+      additions.push({ coordinates, geom, entity, layer })
+    })
+
+    if (!additions.length) return { created: 0, skipped, targetLayerId: target.id }
+    this._recordHistory()
+    additions.forEach(({ coordinates, geom, entity, layer }) => {
+      target.parcels.push({
+        id: uuid(),
+        layerId: target.id,
+        coordinates,
+        attributes: {
+          ...DEFAULT_PARCEL_ATTRS,
+          ghiChu: `Tạo tự động từ ${entity.sourceType} · ${layer.name}`,
+        },
+        area_m2: geom.area_m2,
+        perimeter_m: geom.perimeter_m,
+        selected: false,
+        createdAt: now(),
+        updatedAt: now(),
+      })
+    })
+    this._save()
+    this._notify()
+    return { created: additions.length, skipped, targetLayerId: target.id }
+  }
+
+  updateCadEntity(layerId, entityId, patch) {
+    const layer = this._getLayer(layerId)
+    const entity = layer?.cadEntities?.find(item => item.id === entityId)
+    if (!layer || layer.locked || !entity) return false
+    this._recordHistory()
+    Object.assign(entity, patch)
+    if (patch.coordinates) entity.coordinates = JSON.parse(JSON.stringify(patch.coordinates))
+    this._save()
+    this._notify()
+    return true
+  }
+
+  updateCadText(layerId, textId, patch) {
+    const layer = this._getLayer(layerId)
+    const text = layer?.cadTexts?.find(item => item.id === textId)
+    if (!layer || layer.locked || !text) return false
+    this._recordHistory()
+    Object.assign(text, patch)
+    this._save()
+    this._notify()
+    return true
+  }
+
+  removeCadObject(layerId, kind, objectId) {
+    const layer = this._getLayer(layerId)
+    const key = kind === 'text' ? 'cadTexts' : 'cadEntities'
+    if (!layer || layer.locked || !layer[key]?.some(item => item.id === objectId)) return false
+    this._recordHistory()
+    layer[key] = layer[key].filter(item => item.id !== objectId)
+    this._save()
+    this._notify()
+    return true
   }
 
   reorderLayers(fromIdx, toIdx) {

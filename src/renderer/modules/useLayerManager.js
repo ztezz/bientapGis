@@ -28,6 +28,21 @@ export function useLayerManager() {
   const updateLayer = useCallback((layerId, patch) =>
     layerStore.updateLayer(layerId, patch), [])
 
+  const updateLayers = useCallback((layerIds, patchOrUpdater) =>
+    layerStore.updateLayers(layerIds, patchOrUpdater), [])
+
+  const createParcelsFromSourceGroup = useCallback((sourceGroupId) =>
+    layerStore.createParcelsFromSourceGroup(sourceGroupId), [])
+
+  const updateCadEntity = useCallback((layerId, entityId, patch) =>
+    layerStore.updateCadEntity(layerId, entityId, patch), [])
+
+  const updateCadText = useCallback((layerId, textId, patch) =>
+    layerStore.updateCadText(layerId, textId, patch), [])
+
+  const removeCadObject = useCallback((layerId, kind, objectId) =>
+    layerStore.removeCadObject(layerId, kind, objectId), [])
+
   const reorderLayers = useCallback((fromIdx, toIdx) =>
     layerStore.reorderLayers(fromIdx, toIdx), [])
 
@@ -90,7 +105,9 @@ export function useLayerManager() {
     lastSavedAt: state.lastSavedAt,
 
     // Layer
-    addLayer, removeLayer, updateLayer, reorderLayers, getActiveLayerId,
+    addLayer, removeLayer, updateLayer, updateLayers, reorderLayers, getActiveLayerId,
+    createParcelsFromSourceGroup,
+    updateCadEntity, updateCadText, removeCadObject,
 
     // Parcel
     addParcel, updateParcelCoords, updateParcelAttributes,

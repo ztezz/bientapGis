@@ -166,6 +166,41 @@ function visibleSceneBounds(canvas) {
   }
 }
 
+function cadTextLayout(text, transform, zoom = 1) {
+  const attachment = Number(text.attachment) || 1
+  const column = (attachment - 1) % 3
+  const row = Math.floor((attachment - 1) / 3)
+  const align = text.sourceType === 'MTEXT'
+    ? ['left', 'center', 'right'][column]
+    : text.halign === 1 || text.halign === 4 ? 'center' : text.halign === 2 ? 'right' : 'left'
+  const baseline = text.sourceType === 'MTEXT'
+    ? ['top', 'middle', 'bottom'][row]
+    : text.valign === 3 ? 'top' : text.valign === 2 ? 'middle' : text.valign === 1 ? 'bottom' : 'alphabetic'
+  const point = worldToCanvas(text, transform)
+  const fontSize = Math.max(0.5, Number(text.textHeight || 2.5) * transform.scale * TIMES_CAD_HEIGHT_FACTOR)
+  const lines = String(text.text || '').split('\n')
+  const width = Math.max(fontSize * 0.4, ...lines.map(line => line.length * fontSize * 0.55)) * (Number(text.xScale) || 1)
+  const lineHeight = fontSize * 1.15
+  const height = fontSize + Math.max(0, lines.length - 1) * lineHeight
+  const offsetY = fontSize * TIMES_CAD_BASELINE_OFFSET
+  const minX = align === 'right' ? -width : align === 'center' ? -width / 2 : 0
+  const maxX = minX + width
+  let minY
+  if (baseline === 'top') minY = offsetY
+  else if (baseline === 'middle') minY = offsetY - fontSize / 2
+  else if (baseline === 'bottom') minY = offsetY - fontSize
+  else minY = offsetY - fontSize * 0.82
+  const maxY = minY + height
+  const angle = -(Number(text.rotation) || 0)
+  const cos = Math.cos(angle), sin = Math.sin(angle)
+  const transformCorner = ([x, y]) => ({
+    x: point.x + x * cos - y * sin,
+    y: point.y + x * sin + y * cos,
+  })
+  const corners = [[minX, minY], [maxX, minY], [maxX, maxY], [minX, maxY]].map(transformCorner)
+  return { point, fontSize, align, baseline, width, height, corners, bounds: pointBounds(corners), zoom }
+}
+
 // ============================================================
 // COMPONENT
 // ============================================================
@@ -179,12 +214,16 @@ const CanvasEditor = forwardRef(function CanvasEditor(
     snappingEnabled = true,
     transparentBackground = false,
     tool = 'pick',
+    cadSelection,
     onParcelDrawn,      // (layerId, coordinates[]) => void
     onParcelSelected,   // (layerId, parcelId) => void
     onVertexMoved,      // (layerId, parcelId, newCoords) => void
     onAreaChange,       // ({ area, perimeter }) => void
     onMultiSelect,      // ([{ layerId, parcelId }]) => void
     onViewportChange,
+    onCadSelected,
+    onCadEntityChanged,
+    onCadTextChanged,
   },
   ref
 ) {
@@ -195,6 +234,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   const activeLayerIdRef = useRef(activeLayerId)
   const snappingRef = useRef(snappingEnabled)
   const layersRef = useRef(layers)
+  const cadSelectionRef = useRef(cadSelection)
+  const cadDragRef = useRef(null)
   const toolEvents = useRef({ down: null, dbl: null, move: null, up: null })
   const isPanning  = useRef(false)
   const lastPan    = useRef({ x: 0, y: 0 })
@@ -283,6 +324,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   useEffect(() => { activeLayerIdRef.current = activeLayerId }, [activeLayerId])
   useEffect(() => { snappingRef.current = snappingEnabled }, [snappingEnabled])
   useEffect(() => { layersRef.current = layers }, [layers])
+  useEffect(() => { cadSelectionRef.current = cadSelection }, [cadSelection])
 
   function getSnapResult(pointer, options = {}) {
     if (!snappingRef.current || !transformRef.current) return null
@@ -492,7 +534,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   useEffect(() => {
     if (!fc.current) return
     renderAllLayers(layers, selectedParcelId)
-  }, [layers, selectedParcelId, multiSelectedIds, tool])
+  }, [layers, selectedParcelId, multiSelectedIds, tool, cadSelection])
 
   // ── Cập nhật cursor/handler khi tool đổi ────────────────
 
@@ -527,6 +569,11 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       addvertex: 'crosshair',
       deletevertex: 'not-allowed',
       move:      'move',
+      cadpick:   'pointer',
+      cadvertex: 'crosshair',
+      cadmove:   'move',
+      cadaddvertex: 'copy',
+      caddeletevertex: 'not-allowed',
     }
     canvas.setCursor(cursorMap[tool] || 'default')
     canvas.skipTargetFind = tool === 'pan' || tool === 'draw' || tool === 'measure' || tool === 'boxselect'
@@ -560,6 +607,22 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       setStatus('Click vào đỉnh của vùng đang chọn để xóa | Tối thiểu 3 đỉnh')
     } else if (tool === 'pan') {
       setStatus('Kéo để di chuyển bản đồ | Scroll để zoom')
+    } else if (tool === 'cadpick') {
+      setStatus('Click vào nét hoặc chữ CAD để chọn')
+      canvas.on('mouse:down:before', handleCadPointerDown)
+      toolEvents.current.down = handleCadPointerDown
+    } else if (['cadvertex', 'cadmove', 'cadaddvertex', 'caddeletevertex'].includes(tool)) {
+      const messages = {
+        cadvertex: 'Kéo một đỉnh của nét CAD đang chọn',
+        cadmove: 'Kéo để di chuyển đối tượng CAD đang chọn',
+        cadaddvertex: 'Click lên cạnh để thêm đỉnh CAD',
+        caddeletevertex: 'Click gần đỉnh để xóa đỉnh CAD',
+      }
+      setStatus(messages[tool])
+      canvas.on('mouse:down:before', handleCadPointerDown)
+      canvas.on('mouse:move', handleCadPointerMove)
+      canvas.on('mouse:up', handleCadPointerUp)
+      toolEvents.current = { down: handleCadPointerDown, dbl: null, move: handleCadPointerMove, up: handleCadPointerUp }
     }
 
     // Bật/tắt draggable cho vertex
@@ -740,6 +803,211 @@ const CanvasEditor = forwardRef(function CanvasEditor(
   // RENDER LAYERS
   // ============================================================
 
+  function getCadHit(pointer) {
+    const zoom = fc.current?.getZoom() || 1
+    const threshold = 12 / zoom
+    let best = null
+    cadSnapGeometryRef.current.forEach(item => {
+      const layer = layersRef.current.find(candidate => candidate.id === item.layerId)
+      if (!layer?.visible || pointer.x < item.minX - threshold || pointer.x > item.maxX + threshold ||
+          pointer.y < item.minY - threshold || pointer.y > item.maxY + threshold) return
+      const edge = nearestPointOnEdges(pointer, item.points, item.closed)
+      if (edge && edge.distance <= threshold && (!best || edge.distance < best.distance)) {
+        best = { layerId: item.layerId, kind: 'entity', objectId: item.id, distance: edge.distance, edgeIndex: edge.edgeIndex }
+      }
+    })
+    layersRef.current.forEach(layer => {
+      if (!layer.visible) return
+      ;(layer.cadTexts || []).forEach(text => {
+        const layout = cadTextLayout(text, transformRef.current, zoom)
+        const distance = Math.hypot(pointer.x - layout.point.x, pointer.y - layout.point.y)
+        if (pointer.x >= layout.bounds.minX - threshold && pointer.x <= layout.bounds.maxX + threshold &&
+            pointer.y >= layout.bounds.minY - threshold && pointer.y <= layout.bounds.maxY + threshold &&
+            (!best || distance < best.distance)) {
+          best = { layerId: layer.id, kind: 'text', objectId: text.id, distance }
+        }
+      })
+    })
+    return best
+  }
+
+  function getCadSelectionObject() {
+    const selection = cadSelectionRef.current
+    const layer = selection && layersRef.current.find(item => item.id === selection.layerId)
+    if (!selection || !layer) return null
+    const object = (selection.kind === 'text' ? layer.cadTexts : layer.cadEntities)?.find(item => item.id === selection.objectId)
+    return object ? { selection, layer, object } : null
+  }
+
+  function addCadDragPreview(drag, object, layer) {
+    const canvas = fc.current
+    if (!canvas) return
+    canvas.getObjects().filter(item => item.__isCadSelection).forEach(item => canvas.remove(item))
+    drag.previewWorld = drag.mode === 'moveText'
+      ? { x: object.x, y: object.y }
+      : JSON.parse(JSON.stringify(object.coordinates))
+    const preview = new fabric.Object({
+      left: 0, top: 0, width: canvas.width, height: canvas.height,
+      originX: 'left', originY: 'top', selectable: false, evented: false,
+      objectCaching: false,
+    })
+    preview._render = context => {
+      const current = cadDragRef.current
+      if (!current || current.preview !== preview || !transformRef.current) return
+      context.save()
+      context.translate(-preview.width / 2, -preview.height / 2)
+      context.strokeStyle = '#38bdf8'
+      context.fillStyle = '#e0f2fe'
+      context.lineWidth = 2.5 / (canvas.getZoom() || 1)
+      if (current.mode === 'moveText') {
+        const previewText = { ...object, ...current.previewWorld }
+        const layout = cadTextLayout(previewText, transformRef.current, canvas.getZoom() || 1)
+        context.translate(layout.point.x, layout.point.y)
+        context.rotate(-(Number(object.rotation) || 0))
+        context.translate(0, layout.fontSize * TIMES_CAD_BASELINE_OFFSET)
+        context.scale(Number(object.xScale) || 1, 1)
+        context.font = `${layout.fontSize}px "Times New Roman"`
+        context.textAlign = layout.align
+        context.textBaseline = layout.baseline
+        String(object.text || '').split('\n').forEach((line, index) => context.fillText(line, 0, index * layout.fontSize * 1.15))
+      } else {
+        const points = current.previewWorld.map(coord => worldToCanvas(coord, transformRef.current))
+        if (points.length) {
+          context.beginPath()
+          context.moveTo(points[0].x, points[0].y)
+          for (let index = 1; index < points.length; index++) context.lineTo(points[index].x, points[index].y)
+          if (object.closed) context.closePath()
+          context.stroke()
+          points.forEach(point => {
+            context.beginPath()
+            context.arc(point.x, point.y, 4 / (canvas.getZoom() || 1), 0, Math.PI * 2)
+            context.fill()
+          })
+        }
+      }
+      context.restore()
+    }
+    preview.__isCadDragPreview = true
+    drag.preview = preview
+    canvas.add(preview)
+    preview.bringToFront()
+    canvas.requestRenderAll()
+  }
+
+  function handleCadPointerDown(opt) {
+    if (opt.e.button !== 0 || !transformRef.current) return
+    const canvas = fc.current
+    const pointer = canvas.getPointer(opt.e)
+    const hit = getCadHit(pointer)
+    if (activeToolRef.current === 'cadpick') {
+      onCadSelected?.(hit ? { layerId: hit.layerId, kind: hit.kind, objectId: hit.objectId } : null)
+      return
+    }
+    let selected = getCadSelectionObject()
+    if (!selected || (hit && (hit.layerId !== selected.selection.layerId || hit.objectId !== selected.selection.objectId))) {
+      if (!hit) return
+      onCadSelected?.({ layerId: hit.layerId, kind: hit.kind, objectId: hit.objectId })
+      const layer = layersRef.current.find(item => item.id === hit.layerId)
+      const object = (hit.kind === 'text' ? layer?.cadTexts : layer?.cadEntities)?.find(item => item.id === hit.objectId)
+      selected = object ? { selection: hit, layer, object } : null
+    }
+    if (!selected || selected.layer.locked) {
+      setStatus(selected?.layer.locked ? 'Lớp CAD đang khóa. Mở khóa lớp để biên tập.' : 'Chưa chọn đối tượng CAD.')
+      return
+    }
+
+    const currentTool = activeToolRef.current
+    if (selected.selection.kind === 'text') {
+      if (currentTool === 'cadmove') {
+        const drag = { mode: 'moveText', start: pointer, original: { x: selected.object.x, y: selected.object.y }, ...selected.selection }
+        cadDragRef.current = drag
+        addCadDragPreview(drag, selected.object, selected.layer)
+      }
+      return
+    }
+    const points = selected.object.coordinates.map(coord => worldToCanvas(coord, transformRef.current))
+    if (currentTool === 'cadaddvertex') {
+      const edge = nearestPointOnEdges(pointer, points, selected.object.closed)
+      if (!edge || edge.distance > 12 / (canvas.getZoom() || 1)) return
+      const coordinates = [...selected.object.coordinates]
+      coordinates.splice(edge.edgeIndex + 1, 0, { point: String(edge.edgeIndex + 2), ...canvasToWorld(edge.point, transformRef.current) })
+      coordinates.forEach((coord, index) => { coord.point = String(index + 1) })
+      onCadEntityChanged?.(selected.layer.id, selected.object.id, { coordinates })
+      setStatus(`Đã thêm đỉnh CAD · ${coordinates.length} đỉnh`)
+      return
+    }
+    if (currentTool === 'caddeletevertex') {
+      let nearest = null
+      points.forEach((point, index) => {
+        const distance = Math.hypot(pointer.x - point.x, pointer.y - point.y)
+        if (!nearest || distance < nearest.distance) nearest = { index, distance }
+      })
+      const minimum = selected.object.closed ? 3 : 2
+      if (!nearest || nearest.distance > 12 / (canvas.getZoom() || 1) || points.length <= minimum) return
+      const coordinates = selected.object.coordinates.filter((_, index) => index !== nearest.index)
+      coordinates.forEach((coord, index) => { coord.point = String(index + 1) })
+      onCadEntityChanged?.(selected.layer.id, selected.object.id, { coordinates })
+      setStatus(`Đã xóa đỉnh CAD · còn ${coordinates.length} đỉnh`)
+      return
+    }
+    if (currentTool === 'cadvertex') {
+      let nearest = null
+      points.forEach((point, index) => {
+        const distance = Math.hypot(pointer.x - point.x, pointer.y - point.y)
+        if (!nearest || distance < nearest.distance) nearest = { index, distance }
+      })
+      if (nearest?.distance <= 12 / (canvas.getZoom() || 1)) {
+        const drag = { mode: 'vertex', vertexIndex: nearest.index, start: pointer, coordinates: JSON.parse(JSON.stringify(selected.object.coordinates)), ...selected.selection }
+        cadDragRef.current = drag
+        addCadDragPreview(drag, selected.object, selected.layer)
+      }
+    } else if (currentTool === 'cadmove') {
+      const drag = { mode: 'moveEntity', start: pointer, coordinates: JSON.parse(JSON.stringify(selected.object.coordinates)), ...selected.selection }
+      cadDragRef.current = drag
+      addCadDragPreview(drag, selected.object, selected.layer)
+    }
+  }
+
+  function handleCadPointerMove(opt) {
+    const drag = cadDragRef.current
+    if (!drag || !transformRef.current) return
+    const pointer = fc.current.getPointer(opt.e)
+    const from = canvasToWorld(drag.start, transformRef.current)
+    const to = canvasToWorld(pointer, transformRef.current)
+    const dx = to.x - from.x, dy = to.y - from.y
+    if (drag.mode === 'moveText') {
+      drag.previewWorld = { x: drag.original.x + dx, y: drag.original.y + dy }
+    } else {
+      drag.previewWorld = drag.coordinates.map((coord, index) =>
+        drag.mode === 'vertex' && index !== drag.vertexIndex ? coord : { ...coord, x: coord.x + dx, y: coord.y + dy })
+    }
+    fc.current.requestRenderAll()
+    setStatus(`Đang di chuyển CAD: ΔX ${(to.x - from.x).toFixed(3)} m · ΔY ${(to.y - from.y).toFixed(3)} m`)
+  }
+
+  function handleCadPointerUp(opt) {
+    const drag = cadDragRef.current
+    cadDragRef.current = null
+    if (!drag || !transformRef.current) return
+    if (drag.preview) fc.current.remove(drag.preview)
+    const pointer = fc.current.getPointer(opt.e)
+    const from = canvasToWorld(drag.start, transformRef.current)
+    const to = canvasToWorld(pointer, transformRef.current)
+    const dx = to.x - from.x, dy = to.y - from.y
+    if (Math.hypot(dx, dy) < 1e-8) {
+      renderAllLayers(layersRef.current, null)
+      return
+    }
+    if (drag.mode === 'moveText') {
+      onCadTextChanged?.(drag.layerId, drag.objectId, { x: drag.original.x + dx, y: drag.original.y + dy })
+    } else {
+      const coordinates = drag.coordinates.map((coord, index) =>
+        drag.mode === 'vertex' && index !== drag.vertexIndex ? coord : { ...coord, x: coord.x + dx, y: coord.y + dy })
+      onCadEntityChanged?.(drag.layerId, drag.objectId, { coordinates })
+    }
+    setStatus('Đã cập nhật đối tượng CAD')
+  }
+
   function renderAllLayers(layerList, selParcelId) {
     const canvas = fc.current
     if (!canvas) return
@@ -803,9 +1071,34 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         renderParcel(canvas, layer, parcel, isSelected, isMultiSelected)
       })
     })
+    renderCadSelection(canvas)
 
     canvas.renderAll()
     requestAnimationFrame(emitViewportChange)
+  }
+
+  function renderCadSelection(canvas) {
+    const selected = getCadSelectionObject()
+    if (!selected || !selected.layer.visible || !transformRef.current) return
+    const zoom = canvas.getZoom() || 1
+    if (selected.selection.kind === 'text') {
+      const layout = cadTextLayout(selected.object, transformRef.current, zoom)
+      const outline = new fabric.Polygon(layout.corners, { fill: 'rgba(59,130,246,.08)', stroke: '#60a5fa', strokeWidth: 2 / zoom, selectable: false, evented: false })
+      outline.__isCadSelection = true
+      canvas.add(outline)
+      return
+    }
+    const points = selected.object.coordinates.map(coord => worldToCanvas(coord, transformRef.current))
+    if (points.length < 2) return
+    const outlineOptions = { fill: selected.object.closed ? 'rgba(59,130,246,.06)' : '', stroke: '#60a5fa', strokeWidth: 3 / zoom, selectable: false, evented: false }
+    const outline = selected.object.closed ? new fabric.Polygon(points, outlineOptions) : new fabric.Polyline(points, outlineOptions)
+    outline.__isCadSelection = true
+    canvas.add(outline)
+    points.forEach(point => {
+      const handle = new fabric.Circle({ left: point.x, top: point.y, originX: 'center', originY: 'center', radius: 4 / zoom, fill: '#dbeafe', stroke: '#2563eb', strokeWidth: 1.5 / zoom, selectable: false, evented: false })
+      handle.__isCadSelection = true
+      canvas.add(handle)
+    })
   }
 
   function renderCadGeometryLayer(canvas, layer) {
@@ -817,7 +1110,7 @@ const CanvasEditor = forwardRef(function CanvasEditor(
         const scaled = Math.abs(length) * tr.scale * (entity.lineTypeScale || 1)
         return length === 0 ? 1 / (canvas.getZoom() || 1) : Math.max(scaled, 1 / (canvas.getZoom() || 1))
       })
-      return points.length < 2 ? null : { points, closed: entity.closed, pattern, ...pointBounds(points) }
+      return points.length < 2 ? null : { id: entity.id, points, closed: entity.closed, pattern, ...pointBounds(points) }
     }).filter(Boolean)
     if (!prepared.length) return
     const object = new fabric.Object({
@@ -833,7 +1126,10 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       context.lineWidth = 1.15 / (canvas.getZoom() || 1)
       context.lineJoin = 'round'
       context.lineCap = 'round'
-      const visibleEntities = prepared.filter(entity => !(entity.maxX < visible.minX || entity.minX > visible.maxX || entity.maxY < visible.minY || entity.minY > visible.maxY))
+      const drag = cadDragRef.current
+      const visibleEntities = prepared.filter(entity =>
+        !(drag && drag.layerId === layer.id && drag.kind === 'entity' && drag.objectId === entity.id) &&
+        !(entity.maxX < visible.minX || entity.minX > visible.maxX || entity.maxY < visible.minY || entity.minY > visible.maxY))
       const groups = new Map()
       visibleEntities.forEach(entity => {
         const key = entity.pattern.join(',')
@@ -885,6 +1181,8 @@ const CanvasEditor = forwardRef(function CanvasEditor(
       const zoom = canvas.getZoom() || 1
       const visible = visibleSceneBounds(canvas)
       prepared.forEach(text => {
+        const drag = cadDragRef.current
+        if (drag && drag.layerId === layer.id && drag.kind === 'text' && drag.objectId === text.id) return
         if (text.fontSize * zoom < 1.5) return
         if (text.point.x < visible.minX - text.fontSize * 20 || text.point.x > visible.maxX + text.fontSize * 20 ||
             text.point.y < visible.minY - text.fontSize * 4 || text.point.y > visible.maxY + text.fontSize * 4) return

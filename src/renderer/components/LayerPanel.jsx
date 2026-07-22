@@ -39,6 +39,8 @@ export default function LayerPanel({
   onRemoveLayer,
   onRemoveAllLayers,
   onUpdateLayer,
+  onUpdateLayers,
+  onCreateParcelsFromGroup,
   onReorderLayers,
   onSelectParcel,
   onRemoveParcel,
@@ -56,6 +58,7 @@ export default function LayerPanel({
   const [newLayerColor,  setNewLayerColor]   = useState(LAYER_COLORS[0])
   const [editingColor,   setEditingColor]    = useState(null)   // layerId đang chọn màu
   const [editingOpacity, setEditingOpacity]  = useState(null)
+  const [groupNotice, setGroupNotice] = useState(null)
 
   const dragIdx  = useRef(null)
   const dragOver = useRef(null)
@@ -193,6 +196,7 @@ export default function LayerPanel({
         {displayRows.map((item) => {
           if (item.type === 'group') {
             const expanded = expandedGroups.has(item.id)
+            const layerIds = item.layers.map(layer => layer.id)
             const cadCount = item.layers.reduce((sum, layer) =>
               sum + (layer.cadEntities?.length || 0) + (layer.cadTexts?.length || 0), 0)
             return (
@@ -204,7 +208,57 @@ export default function LayerPanel({
                     <strong title={item.name}>{item.name}</strong>
                     <small>{item.format} · {item.layers.length} lớp · {cadCount} CAD</small>
                   </span>
+                  <span className="lp-folder-actions" onClick={event => event.stopPropagation()}>
+                    <span
+                      role="button" tabIndex="0" className="lp-folder-action lp-folder-action--create"
+                      title="Tạo vùng từ polyline và HATCH khép kín"
+                      onClick={() => {
+                        const result = onCreateParcelsFromGroup?.(item.id)
+                        setGroupNotice({
+                          id: item.id,
+                          text: result?.error || `Đã tạo ${result?.created || 0} vùng${result?.skipped ? ` · bỏ qua ${result.skipped} trùng/không hợp lệ` : ''}`,
+                        })
+                        setExpandedGroups(prev => new Set([...prev, item.id]))
+                      }}
+                      onKeyDown={event => {
+                        if (event.key !== 'Enter') return
+                        const result = onCreateParcelsFromGroup?.(item.id)
+                        setGroupNotice({ id: item.id, text: result?.error || `Đã tạo ${result?.created || 0} vùng` })
+                      }}
+                    >Tạo vùng</span>
+                    <span
+                      role="button" tabIndex="0" className="lp-folder-action"
+                      title="Hiện tất cả lớp trong file"
+                      onClick={() => onUpdateLayers(layerIds, { visible: true })}
+                      onKeyDown={event => event.key === 'Enter' && onUpdateLayers(layerIds, { visible: true })}
+                    >{IC.eye}</span>
+                    <span
+                      role="button" tabIndex="0" className="lp-folder-action"
+                      title="Ẩn tất cả lớp trong file"
+                      onClick={() => onUpdateLayers(layerIds, { visible: false })}
+                      onKeyDown={event => event.key === 'Enter' && onUpdateLayers(layerIds, { visible: false })}
+                    >{IC.eyeOff}</span>
+                    <span
+                      role="button" tabIndex="0" className="lp-folder-action lp-folder-action--text"
+                      title="Đảo trạng thái hiển thị các lớp"
+                      onClick={() => onUpdateLayers(layerIds, layer => ({ visible: !layer.visible }))}
+                      onKeyDown={event => event.key === 'Enter' && onUpdateLayers(layerIds, layer => ({ visible: !layer.visible }))}
+                    >Đảo</span>
+                    <span
+                      role="button" tabIndex="0" className="lp-folder-action"
+                      title="Khóa tất cả lớp trong file"
+                      onClick={() => onUpdateLayers(layerIds, { locked: true })}
+                      onKeyDown={event => event.key === 'Enter' && onUpdateLayers(layerIds, { locked: true })}
+                    >{IC.lock}</span>
+                    <span
+                      role="button" tabIndex="0" className="lp-folder-action"
+                      title="Mở khóa tất cả lớp trong file"
+                      onClick={() => onUpdateLayers(layerIds, { locked: false })}
+                      onKeyDown={event => event.key === 'Enter' && onUpdateLayers(layerIds, { locked: false })}
+                    >{IC.unlock}</span>
+                  </span>
                 </button>
+                {groupNotice?.id === item.id && <div className="lp-folder-notice">{groupNotice.text}</div>}
               </div>
             )
           }

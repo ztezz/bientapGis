@@ -231,6 +231,63 @@
   font-size: 10.5px;
 }
 
+.lp-folder-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.lp-folder-action {
+  min-width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  border-radius: 4px;
+  color: #7386a6;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.lp-folder-action:hover,
+.lp-folder-action:focus-visible {
+  outline: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: #dbeafe;
+}
+
+.lp-folder-action--text {
+  min-width: 30px;
+  padding: 0 4px;
+  color: #93a4c0;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.lp-folder-action--create {
+  min-width: 54px;
+  padding: 0 6px;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  background: rgba(34, 197, 94, 0.08);
+  color: #86efac;
+  font-size: 9.5px;
+  font-weight: 700;
+}
+
+.lp-folder-action--create:hover,
+.lp-folder-action--create:focus-visible {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.16);
+  color: #dcfce7;
+}
+
+.lp-folder-notice {
+  padding: 0 10px 7px 47px;
+  color: #86efac;
+  font-size: 10.5px;
+}
+
 /* ── Layer item ── */
 .lp-layer {
   border-bottom: 1px solid #1a1f35;

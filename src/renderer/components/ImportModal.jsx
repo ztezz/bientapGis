@@ -90,6 +90,11 @@ export default function ImportModal({ open, provinceKey, onClose, onAppend, onRe
               {parsed.type === 'dwg' && <p className="import-note">Đã mở {parsed.metadata.cad_entity_count} đối tượng và {parsed.metadata.cad_text_count} nội dung chữ CAD làm tham chiếu, không tự tạo thửa. Dùng công cụ Vẽ vùng để bắt điểm theo DWG.</p>}
               {parsed.type === 'dwg' && parsed.metadata.cad_entity_count + parsed.metadata.cad_text_count > 10000 && <p className="import-note">Bản vẽ lớn đang dùng chế độ hiển thị tối ưu. Chữ quá nhỏ được ẩn ở mức zoom thấp và sẽ hiện khi phóng to.</p>}
               {parsed.type === 'dwg' && <p className="import-note">Toàn bộ chữ DWG được chuyển về Unicode và hiển thị bằng Times New Roman để giữ cách trình bày thống nhất.</p>}
+              {parsed.type === 'dwg' && parsed.metadata.missing_xrefs?.length > 0 && (
+                <p className="import-error">
+                  Bản vẽ đang thiếu Xref: {parsed.metadata.missing_xrefs.join(', ')}. Các nét thuộc file tham chiếu ngoài không nằm trong DWG này nên không thể hiển thị. Hãy mở bản vẽ trong AutoCAD, Bind Xref rồi lưu thành một DWG đầy đủ trước khi nhập lại.
+                </p>
+              )}
             </>
           )}
         </div>

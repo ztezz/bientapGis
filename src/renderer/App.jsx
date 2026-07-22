@@ -30,6 +30,7 @@ import ParcelAttributePanel  from '@components/ParcelAttributePanel'
 import MultiSelectPanel      from '@components/MultiSelectPanel'
 import SettingsModal         from '@components/SettingsModal'
 import ConfirmDialog         from '@components/ConfirmDialog'
+import CadPropertyPanel      from '@components/CadPropertyPanel'
 import { useLayerManager }   from '@modules/useLayerManager'
 import { PROVINCES }         from '@modules/vn2000'
 import { loadSettingsFromFile } from '@modules/settingsStore'
@@ -54,6 +55,15 @@ const TOOL_GROUPS = [
       { id: 'deletevertex', icon: '−', label: 'Xóa đỉnh', shortcut: 'X', description: 'Xóa đỉnh, giữ tối thiểu ba điểm' },
     ]
   },
+  {
+    id: 'cad', label: 'CAD', tools: [
+      { id: 'cadpick', icon: '⌖', label: 'Chọn CAD', shortcut: 'C', description: 'Chọn nét hoặc chữ CAD' },
+      { id: 'cadvertex', icon: '◇', label: 'Sửa đỉnh CAD', shortcut: 'J', description: 'Kéo đỉnh của nét CAD đang chọn' },
+      { id: 'cadmove', icon: '✥', label: 'Di chuyển CAD', shortcut: 'K', description: 'Di chuyển nét hoặc chữ CAD' },
+      { id: 'cadaddvertex', icon: '＋', label: 'Thêm đỉnh CAD', shortcut: 'I', description: 'Chèn đỉnh vào cạnh CAD' },
+      { id: 'caddeletevertex', icon: '−', label: 'Xóa đỉnh CAD', shortcut: 'O', description: 'Xóa đỉnh CAD đang chọn' },
+    ]
+  },
   { id: 'measure', label: 'Đo', tools: [
     { id: 'measure', icon: '📏', label: 'Đo khoảng cách', shortcut: 'M', description: 'Đo chiều dài giữa hai vị trí' },
   ] },
@@ -72,12 +82,12 @@ export default function App() {
   const {
     layers, selected,
     canUndo, canRedo, lastSavedAt,
-    addLayer, removeLayer, updateLayer, reorderLayers,
+    addLayer, removeLayer, updateLayer, updateLayers, reorderLayers, createParcelsFromSourceGroup,
     addParcel, updateParcelCoords, updateParcelAttributes,
     removeParcel, duplicateParcel, updateParcelsAttributes, removeParcels,
     undo, redo,
     selectParcel, clearSelection, getSelectedParcel,
-    getActiveLayerId,
+    getActiveLayerId, updateCadEntity, updateCadText, removeCadObject,
     importJSON, appendLayers, resetStore,
   } = useLayerManager()
 
@@ -105,6 +115,7 @@ export default function App() {
   // Multi-select: [{ layerId, parcelId }]
   const [multiSelected,  setMultiSelected]  = useState([])
   const [confirmation,   setConfirmation]   = useState(null)
+  const [cadSelection, setCadSelection] = useState(null)
   const [windowMaximized, setWindowMaximized] = useState(false)
   const multiSelectedIds = useMemo(() => multiSelected.map(item => item.parcelId), [multiSelected])
 
@@ -149,6 +160,10 @@ export default function App() {
     if (multiSelected.length > 0) { setRightTab('multisel') }
   }, [multiSelected.length])
 
+  useEffect(() => {
+    if (cadSelection) { setRightTab('cad'); clearSelection(); setMultiSelected([]) }
+  }, [cadSelection?.objectId])
+
   // Sync activeLayerId khi layers thay đổi
   useEffect(() => {
     if (!layers.find(l => l.id === activeLayerId)) {
@@ -173,7 +188,7 @@ export default function App() {
       const t = TOOLS.find(t => t.shortcut === e.key.toUpperCase())
       if (t) { setTool(t.id); if (t.id !== 'boxselect') setMultiSelected([]) }
       if (e.key.toLowerCase() === 'n') setSnapping(value => !value)
-      if (e.key === 'Escape') { clearSelection(); setMultiSelected([]) }
+      if (e.key === 'Escape') { clearSelection(); setMultiSelected([]); setCadSelection(null) }
       if (e.key === 'Delete' && selected?.parcelId) {
         requestConfirmation(
           { title: 'Xóa vùng đang chọn?', message: 'Vùng và toàn bộ thông tin thuộc tính của vùng sẽ bị xóa khỏi lớp hiện tại.' },
@@ -187,10 +202,16 @@ export default function App() {
           () => { removeParcels(multiSelected); setMultiSelected([]) },
         )
       }
+      if (e.key === 'Delete' && cadSelection) {
+        requestConfirmation(
+          { title: 'Xóa đối tượng CAD?', message: 'Đối tượng sẽ bị xóa khỏi layer CAD trong dự án hiện tại.' },
+          () => { removeCadObject(cadSelection.layerId, cadSelection.kind, cadSelection.objectId); setCadSelection(null) },
+        )
+      }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selected, multiSelected, undo, redo, removeParcels, requestConfirmation])
+  }, [selected, multiSelected, cadSelection, undo, redo, removeParcels, removeCadObject, requestConfirmation])
 
   // ── Handlers ────────────────────────────────────────────
 
@@ -203,6 +224,7 @@ export default function App() {
   }, [layers, addParcel, selectParcel])
 
   const handleParcelSelected = useCallback((layerId, parcelId) => {
+    setCadSelection(null)
     selectParcel(layerId, parcelId)
     setRightTab('attrs')
   }, [selectParcel])
@@ -217,6 +239,7 @@ export default function App() {
 
   // Multi-select: nhận danh sách { layerId, parcelId }[] từ canvas
   const handleMultiSelect = useCallback((results, options = {}) => {
+    setCadSelection(null)
     setMultiSelected(current => {
       if (!options.additive) return results
       const merged = [...current]
@@ -240,6 +263,10 @@ export default function App() {
   const selectedParcel = selected ? getSelectedParcel() : null
   const selectedLayer  = selected ? layers.find(l => l.id === selected.layerId) : null
   const activeLayer    = layers.find(l => l.id === activeLayerId) || null
+  const selectedCadLayer = cadSelection ? layers.find(layer => layer.id === cadSelection.layerId) : null
+  const selectedCadObject = cadSelection && selectedCadLayer
+    ? (cadSelection.kind === 'text' ? selectedCadLayer.cadTexts : selectedCadLayer.cadEntities)?.find(item => item.id === cadSelection.objectId)
+    : null
 
   // ── Render ──────────────────────────────────────────────
   return (
@@ -360,12 +387,16 @@ export default function App() {
             snappingEnabled={snapping}
             transparentBackground={basemapEnabled}
             tool={tool}
+            cadSelection={cadSelection}
             onParcelDrawn={handleParcelDrawn}
             onParcelSelected={handleParcelSelected}
             onVertexMoved={handleVertexMoved}
             onAreaChange={setStatusBar}
             onMultiSelect={handleMultiSelect}
             onViewportChange={setViewportInfo}
+            onCadSelected={setCadSelection}
+            onCadEntityChanged={updateCadEntity}
+            onCadTextChanged={updateCadText}
           />
           <MapNavigator
             viewport={viewportInfo}
@@ -400,6 +431,7 @@ export default function App() {
               <button onClick={() => { setRightPanelOpen(true); setRightTab('layers') }} title="Quản lý lớp">☰</button>
               <button onClick={() => { setRightPanelOpen(true); setRightTab('attrs') }} title="Thuộc tính">⊞</button>
               <button onClick={() => { setRightPanelOpen(true); setRightTab('multisel') }} title="Vùng đã chọn">⬚</button>
+              <button onClick={() => { setRightPanelOpen(true); setRightTab('cad') }} title="Biên tập CAD">⌖</button>
             </div>
           )}
           <div className="right-panel-body">
@@ -410,6 +442,13 @@ export default function App() {
               onClick={() => setRightTab('layers')}
             >
               ☰ Lớp ({layers.length})
+            </button>
+            <button
+              className={`right-tab ${rightTab === 'cad' ? 'right-tab--active' : ''}`}
+              onClick={() => setRightTab('cad')}
+            >
+              ⌖ CAD
+              {cadSelection && <span className="right-tab-dot" />}
             </button>
             <button
               className={`right-tab ${rightTab === 'attrs' ? 'right-tab--active' : ''}`}
@@ -460,11 +499,30 @@ export default function App() {
                   )
                 }}
                 onUpdateLayer={updateLayer}
+                onUpdateLayers={updateLayers}
+                onCreateParcelsFromGroup={(sourceGroupId) => {
+                  const result = createParcelsFromSourceGroup(sourceGroupId)
+                  if (result.targetLayerId) setActiveLayerId(result.targetLayerId)
+                  requestAnimationFrame(() => canvasRef.current?.fitToView())
+                  return result
+                }}
                 onReorderLayers={reorderLayers}
                 onSelectParcel={handleParcelSelected}
                 onRemoveParcel={removeParcel}
                 onDuplicateParcel={duplicateParcel}
                 onConfirm={requestConfirmation}
+              />
+            ) : rightTab === 'cad' ? (
+              <CadPropertyPanel
+                selection={cadSelection}
+                layer={selectedCadLayer}
+                object={selectedCadObject}
+                onClear={() => setCadSelection(null)}
+                onSave={(patch) => cadSelection?.kind === 'text' && updateCadText(cadSelection.layerId, cadSelection.objectId, patch)}
+                onRemove={() => requestConfirmation(
+                  { title: 'Xóa đối tượng CAD?', message: 'Đối tượng sẽ bị xóa khỏi layer CAD trong project hiện tại.' },
+                  () => { removeCadObject(cadSelection.layerId, cadSelection.kind, cadSelection.objectId); setCadSelection(null) },
+                )}
               />
             ) : rightTab === 'multisel' ? (
               <MultiSelectPanel

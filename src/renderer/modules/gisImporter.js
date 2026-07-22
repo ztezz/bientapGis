@@ -335,6 +335,7 @@ export function parseDWG(drawing, sourceFileName = 'Bản vẽ DWG') {
       cad_text_count: drawingTexts.length,
       cad_font_styles: drawing.fontStyles || {},
       unknown_entities: drawing.unknownEntityCount || 0,
+      missing_xrefs: drawing.missingXrefs || [],
     },
   }
 }
